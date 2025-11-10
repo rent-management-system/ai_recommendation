@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Float, ARRAY, ForeignKey, DateTime, JSONB
+from sqlalchemy import Column, Integer, String, Float, ARRAY, ForeignKey, DateTime
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase
 from datetime import datetime

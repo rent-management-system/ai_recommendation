@@ -1,4 +1,4 @@
-from langgraph.graph import Graph, END
+from langgraph.graph import StateGraph, END
 from app.services.gebeta import geocode, get_matrix
 from app.services.rag import retrieve_relevant_properties, setup_vector_store
 from app.services.gemini import generate_reason
@@ -130,7 +130,7 @@ async def run_recommendation_agent(
         "preferred_amenities": preferred_amenities,
         "language": language
     }
-    graph = Graph()
+    graph = StateGraph()
     graph.add_node("geocode", geocode_step)
     graph.add_node("search", search_step)
     graph.add_node("transport_cost", transport_cost_step)

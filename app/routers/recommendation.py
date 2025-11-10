@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List
 from app.schemas.recommendation import RecommendationRequest, RecommendationResponse
+from app.schemas.property_search import PropertySearchRequest, PropertySearchResponse
 from app.services.langgraph_agent import run_recommendation_agent
 from app.services.rag import save_tenant_profile
+from app.services.property_search import generate_sql_query, execute_sql_query
 from app.dependencies.auth import get_current_user
 from app.config import settings
 from structlog import get_logger
@@ -64,3 +66,20 @@ async def feedback(request: dict, user: dict = Depends(get_current_user)):
         db.add(log)
         await db.commit()
         return {"message": "Feedback recorded"}
+
+@router.post("/properties/search", response_model=PropertySearchResponse)
+async def search_properties(request: PropertySearchRequest, user: dict = Depends(get_current_user)):
+    if user["role"] not in ["Tenant", "Landlord"]: # Allow both tenants and landlords to search
+        raise HTTPException(status_code=403, detail="Only Tenants and Landlords can search properties")
+    try:
+        sql_query = await generate_sql_query(request.query)
+        properties = await execute_sql_query(sql_query)
+        await logger.info("Property search executed", user_id=user["id"], query=request.query, result_count=len(properties))
+        return PropertySearchResponse(results=properties)
+    except ValueError as ve:
+        await logger.error("SQL query generation failed", user_id=user["id"], query=request.query, error=str(ve))
+        raise HTTPException(status_code=400, detail=f"Invalid search query: {ve}")
+    except Exception as e:
+        await logger.error("Property search failed", user_id=user["id"], query=request.query, error=str(e))
+        raise HTTPException(status_code=500, detail="Property search failed")
+

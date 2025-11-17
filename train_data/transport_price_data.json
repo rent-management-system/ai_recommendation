@@ -1,0 +1,266 @@
+[
+  {
+    "source": "Posta",
+    "destination": "Muger",
+    "kilometer": 4.0,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Tikur abay",
+    "kilometer": 4.5,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Assela Menharia",
+    "kilometer": 4.5,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Erdata",
+    "kilometer": 3.5,
+    "price": 10.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Bolo",
+    "kilometer": 6.0,
+    "price": 20.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Mariam",
+    "kilometer": 3.0,
+    "price": 10.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Honey",
+    "kilometer": 3.5,
+    "price": 10.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Amede",
+    "kilometer": 4.0,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Kela",
+    "kilometer": 4.0,
+    "price": 16.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Addis ababa menaharia",
+    "kilometer": 3.5,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Francisco",
+    "kilometer": 3.5,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "105",
+    "kilometer": 5.0,
+    "price": 20.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Tankegna",
+    "kilometer": 3.5,
+    "price": 10.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Sodo ber",
+    "kilometer": 4.0,
+    "price": 16.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Peacock mazoria",
+    "kilometer": 4.0,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Adama Korkoro",
+    "kilometer": 4.0,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Wonji Mazoria",
+    "kilometer": 3.0,
+    "price": 10.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Unity",
+    "kilometer": 4.5,
+    "price": 10.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Haile",
+    "kilometer": 5.0,
+    "price": 10.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Abba Geda",
+    "kilometer": 5.5,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Kereyu",
+    "kilometer": 5.0,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Kidane Mihret",
+    "kilometer": 6.5,
+    "price": 20.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Namald",
+    "kilometer": 7.0,
+    "price": 25.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Atana tera",
+    "kilometer": 5.0,
+    "price": 20.0
+  },
+  {
+    "source": "Posta",
+    "destination": "17",
+    "kilometer": 1.0,
+    "price": 6.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Sar Tera",
+    "kilometer": 4.0,
+    "price": 16.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Zheqala",
+    "kilometer": 2.5,
+    "price": 10.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Jemal",
+    "kilometer": 4.5,
+    "price": 20.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Silase",
+    "kilometer": 4.0,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Gende hara",
+    "kilometer": 3.5,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Derartu",
+    "kilometer": 3.5,
+    "price": 8.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Geda",
+    "kilometer": 4.0,
+    "price": 14.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Chere suk",
+    "kilometer": 4.5,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Wan Gari",
+    "kilometer": 3.5,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Bole",
+    "kilometer": 5.0,
+    "price": 20.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Mabrat hail",
+    "kilometer": 3.0,
+    "price": 10.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Tele",
+    "kilometer": 3.0,
+    "price": 10.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Harambee",
+    "kilometer": 4.0,
+    "price": 10.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Haile Mariam",
+    "kilometer": 4.0,
+    "price": 10.0
+  },
+  {
+    "source": "Posta",
+    "destination": "O4",
+    "kilometer": 5.0,
+    "price": 10.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Condominium",
+    "kilometer": 3.0,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Cherka cherk",
+    "kilometer": 4.0,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "astu main gate",
+    "kilometer": 4.0,
+    "price": 15.0
+  },
+  {
+    "source": "Posta",
+    "destination": "Collage",
+    "kilometer": 5.0,
+    "price": 20.0
+  }
+]

@@ -12,7 +12,7 @@ breaker = CircuitBreaker(fail_max=3, reset_timeout=60)
 @breaker
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)):
     async with httpx.AsyncClient() as client:
-        response = await client.post(
+        response = await client.get(
             f"{settings.USER_MANAGEMENT_URL}/auth/verify",
             headers={"Authorization": f"Bearer {credentials.credentials}"}
         )

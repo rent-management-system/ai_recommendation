@@ -10,7 +10,7 @@ logger = get_logger()
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 async def setup_vector_store(properties: List[dict]):
-    with open("transport_price_data.json", "r") as f:
+    with open("train_data/transport_price_data.json", "r") as f:
         transport_data = json.load(f)
     documents = [f"{p['title']}: {p['location']}, {p['price']} ETB, {p['house_type']}, {p['bedrooms']} bedrooms, amenities: {', '.join(p['amenities'])}" for p in properties]
     transport_docs = [f"{t['source']} to {t['destination']}: {t['price']} ETB, {t['kilometer']} km" for t in transport_data]

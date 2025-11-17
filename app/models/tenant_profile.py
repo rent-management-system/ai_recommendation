@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Float, ARRAY, ForeignKey, DateTime
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase
 from datetime import datetime
@@ -10,7 +10,7 @@ class Base(AsyncAttrs, DeclarativeBase):
 class TenantProfile(Base):
     __tablename__ = "TenantProfiles"
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("Users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     job_school_location = Column(String(255))
     salary = Column(Float)
     house_type = Column(String(50))

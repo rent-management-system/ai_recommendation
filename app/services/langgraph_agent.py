@@ -43,7 +43,7 @@ async def transport_cost_step(state: Dict):
     if not state["properties"]:
         state["transport_costs"] = []
         return state
-    with open("transport_price_data.json", "r") as f:
+    with open("train_data/transport_price_data.json", "r") as f:
         transport_data = pd.DataFrame(json.load(f))
     destinations = [(p["lat"], p["lon"]) for p in state["properties"] if p.get("lat") and p.get("lon")]
     state["transport_costs"] = []

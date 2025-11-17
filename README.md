@@ -21,7 +21,8 @@ ai_recommendation/
 ├── Dockerfile
 ├── README.md
 ├── requirements.txt
-├── transport_price_data.json
+├── train_data/
+│   └── transport_price_data.json
 ├── alembic/
 │   ├── env.py
 │   └── versions/

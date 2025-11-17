@@ -18,14 +18,15 @@ logger = get_logger()
 router = APIRouter(prefix="/api/v1", tags=["recommendation"])
 
 @router.post("/recommendations", response_model=dict, dependencies=[Depends(RateLimiter(times=5, seconds=60))])
-async def get_recommendations(request: RecommendationRequest, user: dict = Depends(get_current_user)):
-    if user["role"] != "Tenant":
+async def get_recommendations(request: RecommendationRequest, user_coroutine: dict = Depends(get_current_user)):
+    user = await user_coroutine # Await the user coroutine
+    if user["role"].lower() != "tenant":
         raise HTTPException(status_code=403, detail="Only Tenants can get recommendations")
     try:
-        tenant_id = await save_tenant_profile(user["id"], request)
+        tenant_id = await save_tenant_profile(user["user_id"], request)
         recommendations = await run_recommendation_agent(
             tenant_id=tenant_id,
-            user_id=user["id"],
+            user_id=user["user_id"],
             job_school_location=request.job_school_location,
             salary=request.salary,
             house_type=request.house_type,
@@ -33,18 +34,19 @@ async def get_recommendations(request: RecommendationRequest, user: dict = Depen
             preferred_amenities=request.preferred_amenities,
             language=request.language
         )
-        await logger.info("Recommendations generated", user_id=user["id"], tenant_id=tenant_id, count=len(recommendations))
+        logger.info("Recommendations generated", user_id=user["user_id"], tenant_id=tenant_id, count=len(recommendations))
         return {
             "recommendations": recommendations,
             "total_budget_suggestion": request.salary * 0.3
         }
     except Exception as e:
-        await logger.error("Recommendation failed", user_id=user["id"], error=str(e))
+        logger.error("Recommendation failed", user_id=user["user_id"], error=str(e))
         raise HTTPException(status_code=500, detail="Recommendation failed")
 
 @router.get("/recommendations/{tenant_id}", response_model=List[RecommendationResponse])
-async def get_saved_recommendations(tenant_id: int, user: dict = Depends(get_current_user)):
-    if user["role"] != "Tenant":
+async def get_saved_recommendations(tenant_id: int, user_coroutine: dict = Depends(get_current_user)):
+    user = await user_coroutine # Await the user coroutine
+    if user["role"].lower() != "tenant":
         raise HTTPException(status_code=403, detail="Only Tenants can view recommendations")
     engine = create_async_engine(settings.DATABASE_URL)
     async with AsyncSession(engine) as db:
@@ -55,8 +57,9 @@ async def get_saved_recommendations(tenant_id: int, user: dict = Depends(get_cur
         return [log.recommendation for log in logs]
 
 @router.post("/recommendations/feedback", response_model=dict)
-async def feedback(request: dict, user: dict = Depends(get_current_user)):
-    if user["role"] != "Tenant":
+async def feedback(request: dict, user_coroutine: dict = Depends(get_current_user)):
+    user = await user_coroutine # Await the user coroutine
+    if user["role"].lower() != "tenant":
         raise HTTPException(status_code=403, detail="Only Tenants can provide feedback")
     if "tenant_id" not in request or "property_id" not in request or "liked" not in request:
         raise HTTPException(status_code=422, detail="Missing required fields")
@@ -68,18 +71,19 @@ async def feedback(request: dict, user: dict = Depends(get_current_user)):
         return {"message": "Feedback recorded"}
 
 @router.post("/properties/search", response_model=PropertySearchResponse)
-async def search_properties(request: PropertySearchRequest, user: dict = Depends(get_current_user)):
+async def search_properties(request: PropertySearchRequest, user_coroutine: dict = Depends(get_current_user)):
+    user = await user_coroutine # Await the user coroutine
     if user["role"] not in ["Tenant", "Landlord"]: # Allow both tenants and landlords to search
         raise HTTPException(status_code=403, detail="Only Tenants and Landlords can search properties")
     try:
         sql_query = await generate_sql_query(request.query)
         properties = await execute_sql_query(sql_query)
-        await logger.info("Property search executed", user_id=user["id"], query=request.query, result_count=len(properties))
+        logger.info("Property search executed", user_id=user["user_id"], query=request.query, result_count=len(properties))
         return PropertySearchResponse(results=properties)
     except ValueError as ve:
-        await logger.error("SQL query generation failed", user_id=user["id"], query=request.query, error=str(ve))
+        logger.error("SQL query generation failed", user_id=user["user_id"], query=request.query, error=str(ve))
         raise HTTPException(status_code=400, detail=f"Invalid search query: {ve}")
     except Exception as e:
-        await logger.error("Property search failed", user_id=user["id"], query=request.query, error=str(e))
+        logger.error("Property search failed", user_id=user["user_id"], query=request.query, error=str(e))
         raise HTTPException(status_code=500, detail="Property search failed")
 

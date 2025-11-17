@@ -54,5 +54,5 @@ Thumbs.db
 # For now, assuming alembic.ini and versions are committed.
 
 # Specific to this project
-# transport_price_data.json seems like source data, so not ignoring.
+# train_data/transport_price_data.json seems like source data, so not ignoring.
 # If it's generated, it should be added here.

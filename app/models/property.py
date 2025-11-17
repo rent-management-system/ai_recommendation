@@ -29,4 +29,4 @@ class Property(Base):
 
     # Relationships
     user = relationship("User", backref="properties")
-    payment = relationship("Payment", backref="property", uselist=False) # One-to-one or one-to-many? Assuming one-to-one for payment_id unique constraint
+    payment = relationship("Payment", backref="property_of_payment", uselist=False, foreign_keys=[payment_id]) # One-to-one or one-to-many? Assuming one-to-one for payment_id unique constraint

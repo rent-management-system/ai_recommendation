@@ -22,4 +22,4 @@ class Payment(Base):
 
     # Relationships
     user = relationship("User", backref="payments")
-    property = relationship("Property", backref="payments")
+    property = relationship("Property", backref="payments", foreign_keys=[property_id])

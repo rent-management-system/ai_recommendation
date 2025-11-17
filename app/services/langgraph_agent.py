@@ -4,7 +4,8 @@ from app.services.rag import retrieve_relevant_properties, setup_vector_store
 from app.services.gemini import generate_reason
 from app.services.search import search_properties
 from app.models.tenant_profile import RecommendationLog
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.config import settings
 from structlog import get_logger
 from typing import Dict, List
@@ -72,17 +73,16 @@ async def rank_step(state: Dict):
         return state
     # Adjust weights based on feedback (example: increase proximity if preferred)
     feedback_weights = {"proximity": 0.4, "affordability": 0.3, "family_fit": 0.3}
-    engine = create_async_engine(settings.DATABASE_URL)
-    async with AsyncSession(engine) as db:
-        feedback_logs = await db.execute(
-            select(RecommendationLog.feedback).where(RecommendationLog.tenant_id == state["tenant_id"])
-        )
-        feedbacks = feedback_logs.scalars().all()
-        liked_count = sum(1 for f in feedbacks if f and f.get("liked", False))
-        if liked_count > 0:
-            feedback_weights["proximity"] += 0.1
-            feedback_weights["affordability"] -= 0.05
-            feedback_weights["family_fit"] -= 0.05
+    db: AsyncSession = state["db"]
+    feedback_logs = await db.execute(
+        select(RecommendationLog.feedback).where(RecommendationLog.tenant_preference_id == state["tenant_preference_id"])
+    )
+    feedbacks = feedback_logs.scalars().all()
+    liked_count = sum(1 for f in feedbacks if f and f.get("liked", False))
+    if liked_count > 0:
+        feedback_weights["proximity"] += 0.1
+        feedback_weights["affordability"] -= 0.05
+        feedback_weights["family_fit"] -= 0.05
     ranked = sorted(state["properties"], key=lambda p: (
         next((tc["distance_km"] for tc in state["transport_costs"] if tc["property_id"] == p["id"]), 5.0) * feedback_weights["proximity"] +
         (p["price"] / state["salary"]) * feedback_weights["affordability"] +
@@ -105,30 +105,31 @@ async def reason_step(state: Dict):
         }
         for prop in state["recommendations"]
     ]
-    engine = create_async_engine(settings.DATABASE_URL)
-    async with AsyncSession(engine) as db:
-        log = RecommendationLog(
-            tenant_id=state["tenant_id"],
-            recommendation=state["recommendations"],
-            feedback=None
-        )
-        db.add(log)
-        await db.commit()
+    db: AsyncSession = state["db"]
+    log = RecommendationLog(
+        tenant_preference_id=state["tenant_preference_id"],
+        recommendation=state["recommendations"],
+        feedback=None
+    )
+    db.add(log)
+    await db.commit()
     return state
 
 async def run_recommendation_agent(
-    tenant_id: int, user_id: int, job_school_location: str, salary: float,
-    house_type: str, family_size: int, preferred_amenities: List[str], language: str
+    tenant_preference_id: int, user_id: str, job_school_location: str, salary: float,
+    house_type: str, family_size: int, preferred_amenities: List[str], language: str,
+    db: AsyncSession
 ) -> List[dict]:
     state = {
-        "tenant_id": tenant_id,
+        "tenant_preference_id": tenant_preference_id,
         "user_id": user_id,
         "job_school_location": job_school_location,
         "salary": salary,
         "house_type": house_type,
         "family_size": family_size,
         "preferred_amenities": preferred_amenities,
-        "language": language
+        "language": language,
+        "db": db
     }
     graph = StateGraph()
     graph.add_node("geocode", geocode_step)

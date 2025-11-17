@@ -45,7 +45,6 @@ if "sslmode=" not in sync_db_url.lower():
 engine = create_engine(
     sync_db_url,
     poolclass=NullPool,
-    connect_args={"sslmode": "require"},
     future=True,
 )
 

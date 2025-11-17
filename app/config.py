@@ -12,26 +12,7 @@ class Settings(BaseSettings):
     USER_MANAGEMENT_URL: str = "https://rent-managment-system-user-magt.onrender.com"
     SEARCH_FILTERS_URL: str = "http://search-filters:8000"
 
-    @field_validator("DATABASE_URL")
-    def encode_database_url(cls, v):
-        """
-        Parses and re-encodes the database URL to handle special characters in the password
-        and adds sslmode=require.
-        """
-        if v:
-            try:
-                # Parse the URL.
-                url = URL.create(v)
-                # Unconditionally add sslmode=require to the query parameters
-                query = dict(url.query)
-                query['sslmode'] = 'require'
-                url = url.set(query=query)
-                # Return the string representation of the URL.
-                return str(url)
-            except Exception:
-                # If parsing fails, return the original value.
-                return v
-        return v
+    
 
     class Config:
         env_file = ".env"

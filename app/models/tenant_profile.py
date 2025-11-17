@@ -7,9 +7,9 @@ from datetime import datetime
 class Base(AsyncAttrs, DeclarativeBase):
     pass
 
-class TenantProfile(Base):
-    __tablename__ = "TenantProfiles"
-    id = Column(Integer, primary_key=True)
+class TenantPreference(Base):
+    __tablename__ = "TenantPreferences"
+    id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(UUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     job_school_location = Column(String(255))
     salary = Column(Float)
@@ -21,7 +21,7 @@ class TenantProfile(Base):
 class RecommendationLog(Base):
     __tablename__ = "RecommendationLogs"
     id = Column(Integer, primary_key=True)
-    tenant_id = Column(Integer, ForeignKey("TenantProfiles.id", ondelete="CASCADE"), nullable=False)
+    tenant_preference_id = Column(Integer, ForeignKey("TenantPreferences.id", ondelete="CASCADE"), nullable=False)
     recommendation = Column(JSONB)
     feedback = Column(JSONB)
     created_at = Column(DateTime, default=datetime.utcnow)

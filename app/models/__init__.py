@@ -1,4 +1,4 @@
-from .tenant_profile import Base, TenantProfile, RecommendationLog
+from .tenant_profile import Base, TenantPreference, RecommendationLog
 from .user import User
 from .payment import Payment
 from .property import Property
@@ -8,7 +8,7 @@ from .password_reset import PasswordReset
 
 __all__ = [
     "Base",
-    "TenantProfile",
+    "TenantPreference",
     "RecommendationLog",
     "User",
     "Payment",

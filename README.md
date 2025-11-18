@@ -111,22 +111,6 @@ graph TD
     I --> K;
     I --> L;
     I --> N;
-
-    style A fill:#e0e0e0,stroke:#666,stroke-width:2px;
-    style B fill:#a0c4ff,stroke:#666,stroke-width:2px;
-    style C fill:#c0c0c0,stroke:#666,stroke-width:2px;
-    style D fill:#c9f7c9,stroke:#666,stroke-width:2px;
-    style E fill:#c0c0c0,stroke:#666,stroke-width:2px;
-    style F fill:#c9f7c9,stroke:#666,stroke-width:2px;
-    style G fill:#ffc0c0,stroke:#666,stroke-width:2px;
-    style H fill:#ffc0ff,stroke:#666,stroke-width:2px;
-    style I fill:#ffffc0,stroke:#666,stroke-width:2px;
-    style J fill:#e0f2f7,stroke:#666,stroke-width:1px;
-    style K fill:#e0f2f7,stroke:#666,stroke-width:1px;
-    style L fill:#e0f2f7,stroke:#666,stroke-width:1px;
-    style M fill:#e0f2f7,stroke:#666,stroke-width:1px;
-    style N fill:#e0f2f7,stroke:#666,stroke-width:1px;
-    style O fill:#e0f2f7,stroke:#666,stroke-width:1px;
 ```
 
 **Explanation of Components:**

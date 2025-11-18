@@ -46,18 +46,27 @@ async def get_matrix(
         o_lon = round(float(lon), 6)
     except Exception:
         raise ValueError("Origin coordinates invalid")
+    # Enforce waypoint limit per provider docs (<= 10)
+    max_waypoints = 10
     dest_list = []
-    for d in destinations:
+    for d in destinations[:max_waypoints]:
         if isinstance(d, (list, tuple)) and len(d) == 2 and valid_pair(d[0], d[1]):
             dest_list.append({"lat": round(float(d[0]), 6), "lon": round(float(d[1]), 6)})
     if not dest_list:
         raise ValueError("No valid destination coordinates for ONM")
-    destinations_json_str = json.dumps(dest_list)
-    params = {"origin": f"{o_lat},{o_lon}", "json": destinations_json_str, "apiKey": settings.GEBETA_API_KEY}
+    # Prepare two format variants for 'json' param
+    # Variant A (provider docs style): "[{lat,lon},{lat,lon}]" with lat,lon order
+    doc_style = "[" + ",".join(["{" + f"{p['lat']},{p['lon']}" + "}" for p in dest_list]) + "]"
+    # Variant B (JSON objects, our previous style)
+    json_style = json.dumps(dest_list)
+
+    base_params = {"origin": f"{o_lat},{o_lon}", "apiKey": settings.GEBETA_API_KEY}
 
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.get(url, params=params, timeout=15.0, follow_redirects=True)
+            # Try doc-style first
+            params_a = {**base_params, "json": doc_style}
+            resp = await client.get(url, params=params_a, timeout=15.0, follow_redirects=True)
             status = resp.status_code
             text = resp.text
 
@@ -71,6 +80,12 @@ async def get_matrix(
                 logger.error("ONM auth error", status_code=status, text=provider_msg)
                 raise AuthError(message=f"ONM auth error: {provider_msg}", status_code=status)
 
+            if status == 422 or status == 400:
+                # Fallback to JSON object style
+                params_b = {**base_params, "json": json_style}
+                resp = await client.get(url, params=params_b, timeout=15.0, follow_redirects=True)
+                status = resp.status_code
+                text = resp.text
             if status != 200:
                 logger.error("ONM API failed", status_code=status, text=text)
                 raise ValueError(f"ONM API failed with status {status}")

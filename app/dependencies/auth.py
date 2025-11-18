@@ -12,11 +12,11 @@ breaker = CircuitBreaker(fail_max=3, reset_timeout=60)
 @breaker
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)):
     async with httpx.AsyncClient() as client:
-        response = await client.post(
+        response = await client.get(
             f"{settings.USER_MANAGEMENT_URL}/auth/verify",
             headers={"Authorization": f"Bearer {credentials.credentials}"}
         )
         if response.status_code != 200:
-            await logger.error("Token verification failed", status_code=response.status_code)
+            logger.error("Token verification failed", status_code=response.status_code)
             raise HTTPException(status_code=401, detail="Invalid token")
         return response.json()

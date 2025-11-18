@@ -16,7 +16,8 @@ async def search_properties(
     bedrooms: Optional[int] = None,
     preferred_amenities: Optional[List[str]] = None,
     user_lat: Optional[float] = None,
-    user_lon: Optional[float] = None
+    user_lon: Optional[float] = None,
+    status: Optional[str] = None
 ) -> List[dict]:
     async with httpx.AsyncClient() as client:
         params = {
@@ -27,10 +28,11 @@ async def search_properties(
             "bedrooms": bedrooms,
             "amenities": preferred_amenities,
             "user_lat": user_lat,
-            "user_lon": user_lon
+            "user_lon": user_lon,
+            "status": status
         }
         response = await client.get(f"{settings.SEARCH_FILTERS_URL}/api/v1/search", params=params)
         if response.status_code != 200:
-            await logger.error("Search failed", status_code=response.status_code)
+            logger.error("Search failed", status_code=response.status_code)
             raise ValueError("Search failed")
         return response.json()["results"]

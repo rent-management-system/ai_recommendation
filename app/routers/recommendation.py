@@ -72,6 +72,58 @@ def _normalize_rec_item(item: dict) -> dict:
     return rec
 
 
+# Latest recommendations for the current user (no tenant_preference_id required)
+@router.get("/recommendations/latest", response_model=List[dict])
+async def get_latest_recommendations(user_coroutine: dict = Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    user = await user_coroutine
+    stmt = (
+        select(RecommendationLog.recommendation)
+        .join(TenantPreference, TenantPreference.id == RecommendationLog.tenant_preference_id)
+        .where(TenantPreference.user_id == user["user_id"])  # filter by current user
+        .order_by(RecommendationLog.created_at.desc())
+        .limit(1)
+    )
+    try:
+        result = await db.execute(stmt)
+        row = result.scalar()
+        if not row:
+            return []
+        return [_normalize_rec_item(r) for r in row]
+    except Exception as e:
+        logger.error("Failed to fetch latest recommendations", error=str(e))
+        return []
+
+# All recommendation logs for the current user with metadata
+@router.get("/recommendations/mine", response_model=List[dict])
+async def get_all_my_recommendation_logs(user_coroutine: dict = Depends(get_current_user), db: AsyncSession = Depends(get_session)):
+    user = await user_coroutine
+    stmt = (
+        select(
+            RecommendationLog.tenant_preference_id,
+            RecommendationLog.created_at,
+            RecommendationLog.recommendation
+        )
+        .join(TenantPreference, TenantPreference.id == RecommendationLog.tenant_preference_id)
+        .where(TenantPreference.user_id == user["user_id"])  # filter by current user
+        .order_by(RecommendationLog.created_at.desc())
+    )
+    try:
+        result = await db.execute(stmt)
+        rows = result.all()
+        logs = []
+        for tp_id, created_at, rec in rows:
+            logs.append({
+                "tenant_preference_id": tp_id,
+                "created_at": created_at.isoformat() if created_at else None,
+                "recommendations": [
+                    _normalize_rec_item(r) for r in (rec or [])
+                ]
+            })
+        return logs
+    except Exception as e:
+        logger.error("Failed to fetch user recommendation logs", error=str(e))
+        return []
+
 @router.get("/recommendations/{tenant_preference_id}", response_model=List[RecommendationResponse])
 async def get_saved_recommendations(tenant_preference_id: int, user_coroutine: dict = Depends(get_current_user), db: AsyncSession = Depends(get_session)):
     user = await user_coroutine # Await the user coroutine
@@ -89,50 +141,6 @@ async def get_saved_recommendations(tenant_preference_id: int, user_coroutine: d
     if not rec_list:
         return []
     return [_normalize_rec_item(r) for r in rec_list]
-
-# Latest recommendations for the current user (no tenant_preference_id required)
-@router.get("/recommendations/latest", response_model=List[RecommendationResponse])
-async def get_latest_recommendations(user_coroutine: dict = Depends(get_current_user), db: AsyncSession = Depends(get_session)):
-    user = await user_coroutine
-    stmt = (
-        select(RecommendationLog.recommendation)
-        .join(TenantPreference, TenantPreference.id == RecommendationLog.tenant_preference_id)
-        .where(TenantPreference.user_id == user["user_id"])  # filter by current user
-        .order_by(RecommendationLog.created_at.desc())
-        .limit(1)
-    )
-    result = await db.execute(stmt)
-    row = result.scalar()
-    if not row:
-        return []
-    # Normalize each item to match RecommendationResponse
-    return [_normalize_rec_item(r) for r in row]
-
-# All recommendation logs for the current user with metadata
-@router.get("/recommendations/mine", response_model=List[dict])
-async def get_all_my_recommendation_logs(user_coroutine: dict = Depends(get_current_user), db: AsyncSession = Depends(get_session)):
-    user = await user_coroutine
-    stmt = (
-        select(
-            RecommendationLog.tenant_preference_id,
-            RecommendationLog.created_at,
-            RecommendationLog.recommendation
-        )
-        .join(TenantPreference, TenantPreference.id == RecommendationLog.tenant_preference_id)
-        .where(TenantPreference.user_id == user["user_id"])  # filter by current user
-        .order_by(RecommendationLog.created_at.desc())
-    )
-    result = await db.execute(stmt)
-    rows = result.all()
-    # Convert to a list of dicts
-    logs = []
-    for tp_id, created_at, rec in rows:
-        logs.append({
-            "tenant_preference_id": tp_id,
-            "created_at": created_at.isoformat() if created_at else None,
-            "recommendations": rec or []
-        })
-    return logs
 
 @router.post("/recommendations/feedback", response_model=dict)
 async def feedback(request: dict, user_coroutine: dict = Depends(get_current_user), db: AsyncSession = Depends(get_session)):

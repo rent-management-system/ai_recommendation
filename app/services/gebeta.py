@@ -91,18 +91,37 @@ async def get_matrix(
                 raise ValueError(f"ONM API failed with status {status}")
 
             onm_response = resp.json()
-            if "directions" not in onm_response or not isinstance(onm_response["directions"], list):
-                logger.error("ONM API response missing 'directions'", response=onm_response)
-                raise ValueError("ONM API response invalid")
-
             distances: List[Dict[str, float]] = []
-            for direction in onm_response["directions"]:
-                dist = direction.get("totalDistance") or direction.get("distance") or 0
-                try:
-                    dist = float(dist)
-                except Exception:
-                    dist = 0.0
-                distances.append({"distance": dist})
+            if isinstance(onm_response, dict) and "directions" in onm_response and isinstance(onm_response["directions"], list):
+                # Legacy/alternative format with 'directions'
+                for direction in onm_response["directions"]:
+                    dist = direction.get("totalDistance") or direction.get("distance") or 0
+                    try:
+                        dist = float(dist)
+                    except Exception:
+                        dist = 0.0
+                    distances.append({"distance": dist})
+            elif isinstance(onm_response, dict) and "origin_to_destination" in onm_response:
+                # Matrix format: origins/destinations + origin_to_destination
+                o2d = onm_response.get("origin_to_destination") or []
+                # Build a map (from_idx, to_idx) -> distance_km
+                matrix = {}
+                for entry in o2d:
+                    try:
+                        f = int(entry.get("from", 0))
+                        t = int(entry.get("to", 0))
+                        d_km = float(entry.get("distance", 0.0))
+                    except Exception:
+                        continue
+                    matrix[(f, t)] = d_km
+                # We have single origin (index 0). Map to each destination index in our list order.
+                for idx in range(len(dest_list)):
+                    d_km = matrix.get((0, idx), 0.0)
+                    # Convert km -> meters to keep internal convention
+                    distances.append({"distance": d_km * 1000.0})
+            else:
+                logger.error("ONM API response missing expected keys", response=onm_response)
+                raise ValueError("ONM API response invalid")
 
             return distances
 

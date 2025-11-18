@@ -43,4 +43,12 @@ async def health():
         "gebeta_key_set": settings.GEBETA_API_KEY not in (None, "", "your_gebeta_key"),
         "gemini_key_set": settings.GEMINI_API_KEY not in (None, "", "your_gemini_key"),
     }
+    # Approved properties count
+    try:
+        async with AsyncSessionFactory() as session:
+            result = await session.execute(text("SELECT COUNT(1) FROM properties WHERE status = 'APPROVED'"))
+            count = result.scalar() or 0
+        details["approved_properties_count"] = int(count)
+    except Exception as e:
+        details["approved_properties_count"] = f"error: {str(e)}"
     return details

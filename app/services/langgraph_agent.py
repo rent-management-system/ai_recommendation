@@ -85,6 +85,19 @@ async def geocode_step(state: AgentState, config: Dict[str, Any]):
 async def search_step(state: AgentState, config: Dict[str, Any]): # Added config
     db: AsyncSession = config["configurable"]["db"] # Access db from config
     results: List[Dict[str, Any]] = []
+    # Helper to normalize DB rows to JSON-safe types
+    def norm_prop(p: Dict[str, Any]) -> Dict[str, Any]:
+        q = dict(p)
+        if isinstance(q.get("id"), UUID):
+            q["id"] = str(q["id"])
+        # numeric conversions
+        for k in ("price", "lat", "lon"):
+            if k in q:
+                try:
+                    q[k] = float(q[k])
+                except Exception:
+                    pass
+        return q
     # Primary DB search (narrow band, APPROVED)
     try:
         min_p = 0.2 * state.salary
@@ -117,7 +130,7 @@ async def search_step(state: AgentState, config: Dict[str, Any]): # Added config
         result = await db.execute(sql_primary, params)
         rows = result.fetchall()
         cols = result.keys()
-        primary = [dict(zip(cols, row)) for row in rows]
+        primary = [norm_prop(dict(zip(cols, row))) for row in rows]
         results.extend(primary)
     except Exception as e:
         await db.rollback()
@@ -143,7 +156,7 @@ async def search_step(state: AgentState, config: Dict[str, Any]): # Added config
             result = await db.execute(sql_broaden, {"min_price": min_p, "max_price": max_p, "loc": loc_pattern})
             rows = result.fetchall()
             cols = result.keys()
-            broader = [dict(zip(cols, row)) for row in rows]
+            broader = [norm_prop(dict(zip(cols, row))) for row in rows]
             seen = {p.get("id") for p in results}
             for p in broader:
                 if p.get("id") not in seen:
@@ -173,7 +186,7 @@ async def search_step(state: AgentState, config: Dict[str, Any]): # Added config
             result = await db.execute(sql, {"min_price": min_p, "max_price": max_p, "loc": loc_pattern})
             rows = result.fetchall()
             cols = result.keys()
-            db_props = [dict(zip(cols, row)) for row in rows]
+            db_props = [norm_prop(dict(zip(cols, row))) for row in rows]
             seen = {p.get("id") for p in results}
             for p in db_props:
                 if p.get("id") not in seen:
@@ -201,7 +214,7 @@ async def search_step(state: AgentState, config: Dict[str, Any]): # Added config
             result = await db.execute(sql_wide, {"min_price": min_p, "max_price": max_p})
             rows = result.fetchall()
             cols = result.keys()
-            wide_props = [dict(zip(cols, row)) for row in rows]
+            wide_props = [norm_prop(dict(zip(cols, row))) for row in rows]
             seen = {p.get("id") for p in results}
             for p in wide_props:
                 if p.get("id") not in seen:
@@ -225,7 +238,7 @@ async def search_step(state: AgentState, config: Dict[str, Any]): # Added config
             result = await db.execute(sql_any)
             rows = result.fetchall()
             cols = result.keys()
-            any_props = [dict(zip(cols, row)) for row in rows]
+            any_props = [norm_prop(dict(zip(cols, row))) for row in rows]
             seen = {p.get("id") for p in results}
             for p in any_props:
                 if p.get("id") not in seen:
@@ -482,11 +495,17 @@ async def run_recommendation_agent(
     compiled_graph = graph.compile()
     try:
         result = await compiled_graph.ainvoke(state, config={"configurable": {"db": db}})
-        if result and hasattr(result, "recommendations"):
-            return result.recommendations
-        else:
-            logger.error("Langgraph ainvoke returned no recommendations", user_id=user_id, result=result)
-            return []
+        # Handle both AgentState and plain dict returns
+        recs: List[dict] = []
+        if result:
+            if hasattr(result, "recommendations"):
+                recs = getattr(result, "recommendations") or []
+            elif isinstance(result, dict):
+                recs = result.get("recommendations", []) or []
+        if not isinstance(recs, list):
+            recs = []
+        logger.debug("Langgraph ainvoke completed", user_id=user_id, recommendations_len=len(recs))
+        return recs
     except Exception as e:
         logger.error("Langgraph ainvoke failed", user_id=user_id, error=str(e))
         raise # Re-raise the exception to be caught by the FastAPI endpoint

@@ -299,3 +299,107 @@ curl -X GET http://0.0.0.0:8005/api/v1/recommendations/mine \
 curl -X GET http://0.0.0.0:8005/api/v1/recommendations/<<TENANT_PREFERENCE_ID>> \
  -H 'Authorization: Bearer YOUR_JWT'
 ```
+
+---
+
+## Frontend Integration Snippets
+
+Below are minimal client examples to integrate quickly.
+
+### JavaScript (fetch)
+```js
+const BASE = 'http://0.0.0.0:8005';
+const token = 'YOUR_JWT';
+
+async function getLatest() {
+  const res = await fetch(`${BASE}/api/v1/recommendations/latest`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function generate(payload) {
+  const res = await fetch(`${BASE}/api/v1/recommendations`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// Example usage
+(async () => {
+  const body = {
+    job_school_location: 'Bole',
+    salary: 5000,
+    house_type: 'apartment',
+    family_size: 2,
+    preferred_amenities: ['wifi','parking'],
+    language: 'am',
+  };
+  const { tenant_preference_id, recommendations } = await generate(body);
+  console.log('Saved ID:', tenant_preference_id, recommendations);
+  const latest = await getLatest();
+  console.log('Latest:', latest);
+})();
+```
+
+### TypeScript (Axios)
+```ts
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: 'http://0.0.0.0:8005',
+  headers: { Authorization: `Bearer ${process.env.NEXT_PUBLIC_JWT}` },
+});
+
+type RecommendationRequest = {
+  job_school_location: string;
+  salary: number;
+  house_type: string;
+  family_size: number;
+  preferred_amenities: string[];
+  language: 'en' | 'am' | 'or';
+};
+
+export async function generateRecommendations(req: RecommendationRequest) {
+  const { data } = await api.post('/api/v1/recommendations', req);
+  return data as {
+    tenant_preference_id: number;
+    recommendations: any[];
+    total_budget_suggestion: number;
+  };
+}
+
+export async function getLatestRecommendations() {
+  const { data } = await api.get('/api/v1/recommendations/latest');
+  return data as any[];
+}
+
+export async function sendFeedback(payload: {
+  tenant_preference_id: number;
+  property_id: string;
+  liked: boolean;
+  note?: string;
+}) {
+  const { data } = await api.post('/api/v1/recommendations/feedback', payload);
+  return data as { message: string };
+}
+```
+
+### Common error patterns
+- 401 Unauthorized: missing/invalid JWT.
+- 403 Forbidden: role must be `tenant`.
+- 422 Unprocessable Entity: validation error (check body shape or path params). If calling `/latest` or `/mine`, ensure server is restarted with the latest route order.
+- 429 Too Many Requests: hit rate limit on POST `/recommendations`.
+- 500: unexpected server error — check server logs.
+
+### CORS & Rate Limits
+- Allowed origins (default): `https://*.huggingface.co`, `https://*.vercel.app`. Update `app/main.py` if your frontend uses another domain.
+- Rate limiting on `POST /api/v1/recommendations`: 5 requests per 60s.
+

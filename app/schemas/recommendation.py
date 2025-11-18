@@ -22,7 +22,7 @@ class RecommendationRequest(BaseModel):
         }
 
 class RecommendationResponse(BaseModel):
-    property_id: int
+    property_id: str
     title: str
     location: str
     price: float

@@ -45,7 +45,7 @@ The core objective is to enhance the tenant's property search experience by cons
 ## 2. Features
 
 *   **Personalized Property Recommendations**: Generates property recommendations based on a comprehensive tenant profile, including job/school location, salary, house type, family size, and preferred amenities.
-*   **Ethiopia-Specific Context**: Integrates with Gebeta Maps for accurate geocoding and minibus route cost estimations within Ethiopia. Supports Amharic and Afaan Oromo inputs and outputs for enhanced local relevance.
+*   **Ethiopia-Specific Context**: Integrates deeply with **Gebeta Maps** for accurate, local-context geocoding and precise minibus route cost estimations within Ethiopia. This ensures recommendations are highly relevant to the local transport and geographical landscape. Supports Amharic and Afaan Oromo inputs and outputs for enhanced local relevance.
 *   **Intelligent Agent Orchestration (LangGraph)**: Utilizes LangGraph to build a robust and flexible recommendation workflow, incorporating conditional logic, fallback mechanisms, and feedback loops to continuously refine recommendations.
 *   **Retrieval-Augmented Generation (RAG) with ChromaDB**: Embeds tenant profiles, property listings, and transport data into ChromaDB, enabling efficient retrieval of relevant information to augment LLM-generated recommendations.
 *   **Zero-Cost Deployment Focus**: Designed with an emphasis on cost-effective deployment, leveraging platforms like Hugging Face Spaces (free tier) and Google Gemini 2.0 Flash (free tier), along with Gebeta Maps (free tier).
@@ -83,34 +83,23 @@ The AI Recommendation Microservice operates within a broader ecosystem, interact
 
 ```mermaid
 graph TD
-    A[Client Application] -->|1. Request Recommendations| B(FastAPI Recommendation Service);
+    A[Client Application] --> B(FastAPI Recommendation Service);
+    B --> C(User Management Microservice);
+    B --> D(Gebeta Maps API);
+    B --> E(Search & Filters Microservice);
+    B --> F(Google Gemini API);
+    B --> G(PostgreSQL Database);
+    B --> H(Redis);
+    B --> I(ChromaDB);
 
-    B -->|2. Authenticate User| C(User Management Microservice);
-    B -->|3. Geocode Location| D(Gebeta Maps API);
-    B -->|4. Search Properties| E(Search & Filters Microservice);
-    B -->|5. Generate Reasons| F(Google Gemini API);
-    B -->|6. Store/Retrieve Preferences & Logs| G(PostgreSQL Database);
-    B -->|7. Cache/Rate Limit| H(Redis);
-    B -->|8. Vector Search (RAG)| I(ChromaDB);
-
-    subgraph Recommendation Workflow (LangGraph Agent)
-        B --> J[Geocoding Step];
-        J --> K[Property Search Step];
-        K --> L[Transport Cost Calculation Step];
-        L --> M[Ranking Step];
-        M --> N[Reason Generation Step];
-        N --> O[Log & Return Recommendations];
+    subgraph Recommendation Workflow
+        B -- LangGraph Agent --> J(Geocoding);
+        J --> K(Property Search);
+        K --> L(Transport Cost);
+        L --> M(Ranking);
+        M --> N(Reason Generation);
+        N --> O(Log & Return);
     end
-
-    J --> D;
-    K --> E;
-    L --> D;
-    N --> F;
-    K --> G;
-    O --> G;
-    I --> K;
-    I --> L;
-    I --> N;
 ```
 
 **Explanation of Components:**
@@ -124,13 +113,27 @@ graph TD
 *   **PostgreSQL Database**: The primary data store for the microservice, storing `TenantPreferences`, `RecommendationLogs`, and interacting with `Users` and `Properties` tables.
 *   **Redis**: Used for caching frequently accessed data and implementing rate limiting to protect the API from abuse.
 *   **ChromaDB**: A local vector database used for Retrieval-Augmented Generation (RAG). It stores embeddings of property data and transport information, allowing for semantic search and context retrieval.
-*   **Recommendation Workflow (LangGraph Agent)**: This is the internal orchestration logic within the FastAPI service. It's a stateful agent that guides the recommendation process through several steps:
-    *   **Geocoding Step**: Determines the coordinates of the tenant's job/school location.
-    *   **Property Search Step**: Queries for potential properties based on tenant preferences.
-    *   **Transport Cost Calculation Step**: Estimates the transport cost from the job/school location to each potential property.
-    *   **Ranking Step**: Ranks the properties based on various factors (affordability, proximity, amenities, feedback).
-    *   **Reason Generation Step**: Uses the Gemini API to generate a natural language explanation for why each recommended property is suitable.
-    *   **Log & Return Recommendations**: Saves the recommendation log to PostgreSQL and returns the final recommendations to the client.
+*   **Recommendation Workflow (LangGraph Agent)**: This is the internal orchestration logic within the FastAPI service, implemented using LangGraph. It's a stateful agent that guides the recommendation process through several steps:
+    *   **Geocoding Step**: Determines the coordinates of the tenant's job/school location. It first attempts to infer coordinates from local transport data (`train_data/transport_price_data.json`) for better local accuracy. If not found, it uses fallback coordinates (currently 9.0, 38.7 for Addis Ababa).
+    *   **Property Search Step**: Queries for potential properties based on tenant preferences. This step employs a multi-stage search strategy to ensure a sufficient number of relevant properties are found:
+        1.  **Primary Search**: Narrows down properties based on location, a tight price range (20-30% of salary), house type, bedrooms, and preferred amenities. Properties must have an `APPROVED` status.
+        2.  **Fallback 1 (Broaden Filters)**: If the primary search yields fewer than 3 results, it broadens the price range (10-50% of salary) and relaxes house type, bedrooms, and amenities filters. Still requires `APPROVED` status.
+        3.  **Fallback 2 (DB-level Query)**: If still insufficient, it performs a direct SQL query to the PostgreSQL database, searching within a wider price range (10-60% of salary) and location (using `ILIKE`), ordered randomly. Only `APPROVED` properties are considered.
+        4.  **Fallback 3 (DB Wide Query)**: If necessary, it searches for any `APPROVED` properties within an even wider price range (10-70% of salary), ignoring location, ordered randomly.
+        5.  **Fallback 4 (Any Approved)**: As a last resort, it fetches any `APPROVED` properties, ordered randomly, to ensure some recommendations are always provided.
+        The goal is to always return up to 10 relevant properties for further processing.
+    *   **Transport Cost Calculation Step**: Estimates the monthly transport cost from the tenant's job/school location to each potential property. It uses Gebeta Maps API (`get_matrix`) for distance matrix calculations and local transport price data (`train_data/transport_price_data.json`) to estimate fares. If Gebeta Maps fails or no direct route is found, it attempts nearest-route matching using Haversine distance on coordinates. If all else fails, it uses fallback fares (e.g., 50 ETB/month).
+    *   **Ranking Step**: This is where the top recommendations are determined based on a weighted scoring system:
+        *   **Initial Weights**: Properties are initially ranked based on a weighted combination of `proximity` (0.4), `affordability` (0.3), and `family_fit` (0.3).
+        *   **Feedback Adjustment**: The weights are dynamically adjusted based on historical user feedback stored in `RecommendationLogs`. If a tenant has previously "liked" recommendations, the `proximity` weight is slightly increased (+0.1), and `affordability` and `family_fit` weights are slightly decreased (-0.05 each). This allows the system to adapt to individual tenant preferences over time.
+        *   **Sorting Logic**: Properties are sorted by a calculated score. The score is lower for better matches. The formula used is:
+            `score = (distance_km * proximity_weight) + (property_price / tenant_salary * affordability_weight) + (abs(property_bedrooms - tenant_family_size) * family_fit_weight)`
+            -   `distance_km`: Distance from job/school to property. Lower is better.
+            -   `property_price / tenant_salary`: Rent-to-salary ratio. Lower is better.
+            -   `abs(property_bedrooms - tenant_family_size)`: Absolute difference between property bedrooms and family size. Lower is better.
+        *   **Selection**: The top 3 ranked properties (or fewer if fewer are available) are selected as the final recommendations.
+    *   **Reason Generation Step**: Uses the Google Gemini API (`generate_reason`) to generate a concise, user-friendly justification for each of the top recommendations. The prompt provided to Gemini is rich with context, including the tenant's profile, property details, transport costs, and other relevant information (distance, monthly transport cost, single trip fare, rent price, salary, family size, bedrooms, amenities, house type). The reason is generated in the tenant's preferred language (English, Amharic, or Afaan Oromo).
+    *   **Log & Return Recommendations**: Saves the final generated recommendations and any associated feedback to the `RecommendationLogs` table in PostgreSQL and returns the top recommendations to the client.
 
 ## 5. Folder Structure
 
@@ -189,7 +192,49 @@ ai_recommendation/
     └── test_recommendation.py   # Tests for recommendation endpoints and logic
 ```
 
-## 6. Setup Guide
+## 6. Database Schema and Design
+
+The microservice interacts with several PostgreSQL tables, some of which are managed directly by this service (`TenantPreferences`, `RecommendationLogs`) and others are external but referenced (`users`, `properties`, `payments`, `refresh_tokens`, `password_resets`, `SavedSearches`). The design emphasizes clear relationships, efficient data storage, and scalability.
+
+### Key Tables and Relationships:
+
+*   **`users` (External)**:
+    *   **Purpose**: Stores user authentication and profile information.
+    *   **Key Fields**: `id` (UUID, Primary Key), `email`, `full_name`, `role` (Enum: `admin`, `owner`, `tenant`, `broker`).
+    *   **Relationship**: One-to-many with `TenantPreferences` (a user can have many preferences), `properties` (a user can own many properties), `payments`, `refresh_tokens`, `password_resets`, and `SavedSearches`.
+*   **`properties` (External)**:
+    *   **Purpose**: Stores details about rental properties.
+    *   **Key Fields**: `id` (UUID, Primary Key), `user_id` (Foreign Key to `users.id`), `title`, `description`, `location`, `price`, `house_type`, `amenities` (JSONB), `photos` (JSONB), `lat`, `lon`, `status`.
+    *   **Relationship**: One-to-many with `payments` (a property can have many payments), and referenced by `TenantPreferences` indirectly through recommendations.
+*   **`TenantPreferences` (Managed by this service)**:
+    *   **Purpose**: Stores a tenant's specific preferences used to generate recommendations.
+    *   **Key Fields**: `id` (Integer, Primary Key, auto-increment), `user_id` (UUID, Foreign Key to `users.id`), `job_school_location`, `salary`, `house_type`, `family_size`, `preferred_amenities` (ARRAY of String), `created_at`.
+    *   **Relationship**: One-to-many with `RecommendationLogs` (one preference can lead to many recommendation logs).
+*   **`RecommendationLogs` (Managed by this service)**:
+    *   **Purpose**: Stores generated recommendations and user feedback for historical tracking and future model refinement.
+    *   **Key Fields**: `id` (Integer, Primary Key), `tenant_preference_id` (Foreign Key to `TenantPreferences.id`), `recommendation` (JSONB), `feedback` (JSONB), `created_at`.
+    *   **Relationship**: Many-to-one with `TenantPreferences`.
+*   **`payments` (External)**:
+    *   **Purpose**: Tracks payment transactions related to properties.
+    *   **Key Fields**: `id` (UUID, Primary Key), `property_id` (Foreign Key to `properties.id`), `user_id` (Foreign Key to `users.id`), `amount`, `status`.
+*   **`refresh_tokens` (External)**:
+    *   **Purpose**: Stores refresh tokens for user authentication.
+    *   **Key Fields**: `id` (UUID, Primary Key), `user_id` (Foreign Key to `users.id`), `token`, `expires_at`.
+*   **`password_resets` (External)**:
+    *   **Purpose**: Stores tokens for password reset functionality.
+    *   **Key Fields**: `id` (UUID, Primary Key), `user_id` (Foreign Key to `users.id`), `token`, `expires_at`.
+*   **`SavedSearches` (External)**:
+    *   **Purpose**: Allows users to save their property search criteria.
+    *   **Key Fields**: `id` (Integer, Primary Key), `user_id` (Foreign Key to `users.id`), `location`, `min_price`, `max_price`, `house_type`, `amenities`, `bedrooms`.
+
+### Design Considerations:
+
+*   **UUID for External IDs**: `user_id` and `property_id` use UUIDs, ensuring global uniqueness and preventing ID collisions across microservices.
+*   **JSONB for Flexible Data**: `amenities` and `photos` in `properties`, and `recommendation` and `feedback` in `RecommendationLogs` utilize PostgreSQL's `JSONB` type. This provides schema flexibility for semi-structured data, allowing for easy storage and querying of complex objects without rigid schema migrations.
+*   **Foreign Key Constraints**: `ON DELETE CASCADE` is used for `TenantPreferences.user_id` and `RecommendationLogs.tenant_preference_id` to ensure data integrity; when a user or tenant preference is deleted, associated records are automatically removed.
+*   **Asynchronous Operations**: The service is built with `asyncpg` and `SQLAlchemy`'s async capabilities to handle database operations non-blockingly, improving concurrency and responsiveness.
+
+
 
 Follow these steps to set up and run the AI Recommendation Microservice locally.
 

@@ -1,5 +1,5 @@
 from langgraph.graph import StateGraph, END
-from app.services.gebeta import geocode, get_matrix
+from app.services.gebeta import get_matrix
 from app.services.rag import retrieve_relevant_properties, setup_vector_store
 from app.services.gemini import generate_reason
 from app.services.search import search_properties
@@ -12,6 +12,7 @@ from typing import Dict, List, Any
 from pydantic import BaseModel
 import json
 import pandas as pd
+from langchain_core.runnables import RunnableLambda # Added import
 
 logger = get_logger()
 
@@ -25,24 +26,23 @@ class AgentState(BaseModel):
     family_size: int
     preferred_amenities: List[str]
     language: str
-    db: AsyncSession # Pydantic needs arbitrary_types_allowed for this
+    # db: AsyncSession # Removed from state
     coords: Dict[str, float] = None
     properties: List[Dict[str, Any]] = []
     transport_costs: List[Dict[str, Any]] = []
     recommendations: List[Dict[str, Any]] = []
 
     class Config:
-        arbitrary_types_allowed = True
+        arbitrary_types_allowed = True # Still needed for other arbitrary types if any
 
-async def geocode_step(state: AgentState): # Changed type hint
-    try:
-        state.coords = await geocode(state.job_school_location) # Access via attribute
-    except Exception:
-        state.coords = {"lat": 9.0, "lon": 38.7}
-        await logger.warning("Geocoding failed, using fallback", location=state.job_school_location)
+async def geocode_step(state: AgentState, config: Dict[str, Any]):
+    db: AsyncSession = config["configurable"]["db"]
+    state.coords = {"lat": 9.0, "lon": 38.7} # Fallback coordinates, geocoding skipped due to free plan limitations
+    logger.warning("Geocoding skipped, using fallback coordinates", location=state.job_school_location, coords=state.coords)
     return state
 
-async def search_step(state: AgentState): # Changed type hint
+async def search_step(state: AgentState, config: Dict[str, Any]): # Added config
+    db: AsyncSession = config["configurable"]["db"] # Access db from config
     try:
         results = await search_properties(
             location=state.job_school_location,
@@ -55,14 +55,17 @@ async def search_step(state: AgentState): # Changed type hint
             user_lon=state.coords["lon"]
         )
         state.properties = results[:10] or []
-    except Exception:
+        logger.debug("Search properties results", user_id=state.user_id, results_type=type(results), results_len=len(results), state_properties_len=len(state.properties))
+    except Exception as e:
         state.properties = []
-        await logger.warning("Search failed, returning empty properties")
+        logger.warning("Search failed, returning empty properties", user_id=state.user_id, error=str(e))
     return state
 
-async def transport_cost_step(state: AgentState): # Changed type hint
+async def transport_cost_step(state: AgentState, config: Dict[str, Any]): # Added config
+    db: AsyncSession = config["configurable"]["db"] # Access db from config
     if not state.properties:
         state.transport_costs = []
+        logger.debug("No properties found, skipping transport cost calculation", user_id=state.user_id)
         return state
     with open("train_data/transport_price_data.json", "r") as f:
         transport_data = pd.DataFrame(json.load(f))
@@ -71,6 +74,7 @@ async def transport_cost_step(state: AgentState): # Changed type hint
     if destinations:
         try:
             distances = await get_matrix(state.coords["lat"], state.coords["lon"], destinations)
+            logger.debug("Get matrix results", user_id=state.user_id, distances_type=type(distances), distances_len=len(distances) if distances else 0)
             for prop, distance in zip(state.properties, distances):
                 distance_km = distance["distance"] / 1000
                 route = f"{state.job_school_location} to {prop['location']}"
@@ -81,21 +85,23 @@ async def transport_cost_step(state: AgentState): # Changed type hint
                 fare = matching_routes["price"].iloc[0] if not matching_routes.empty else 10.0
                 monthly_cost = fare * 2 * 20  # Round-trip, 20 days/month
                 state.transport_costs.append({"property_id": prop["id"], "cost": monthly_cost, "distance_km": distance_km})
-        except Exception:
-            await logger.warning("Matrix API failed, using fallback fares")
+            logger.debug("Transport costs calculated", user_id=state.user_id, state_transport_costs_len=len(state.transport_costs))
+        except Exception as e:
+            logger.warning("Matrix API failed, using fallback fares", user_id=state.user_id, error=str(e))
             for prop in state.properties:
                 state.transport_costs.append({"property_id": prop["id"], "cost": 50.0, "distance_km": 5.0})
     return state
 
-async def rank_step(state: AgentState): # Changed type hint
+async def rank_step(state: AgentState, config: Dict[str, Any]): # Added config
+    db: AsyncSession = config["configurable"]["db"] # Access db from config
     if not state.properties:
         state.recommendations = []
+        logger.debug("No properties found, skipping ranking", user_id=state.user_id)
         return state
     # Adjust weights based on feedback (example: increase proximity if preferred)
     feedback_weights = {"proximity": 0.4, "affordability": 0.3, "family_fit": 0.3}
-    db: AsyncSession = state.db # Access via attribute
     feedback_logs = await db.execute(
-        select(RecommendationLog.feedback).where(RecommendationLog.tenant_preference_id == state.tenant_preference_id) # Access via attribute
+        select(RecommendationLog.feedback).where(RecommendationLog.tenant_preference_id == state.tenant_preference_id)
     )
     feedbacks = feedback_logs.scalars().all()
     liked_count = sum(1 for f in feedbacks if f and f.get("liked", False))
@@ -103,36 +109,46 @@ async def rank_step(state: AgentState): # Changed type hint
         feedback_weights["proximity"] += 0.1
         feedback_weights["affordability"] -= 0.05
         feedback_weights["family_fit"] -= 0.05
-    ranked = sorted(state.properties, key=lambda p: ( # Access via attribute
-        next((tc["distance_km"] for tc in state.transport_costs if tc["property_id"] == p["id"]), 5.0) * feedback_weights["proximity"] + # Access via attribute
-        (p["price"] / state.salary) * feedback_weights["affordability"] + # Access via attribute
-        (abs(p["bedrooms"] - state.family_size) * feedback_weights["family_fit"]) # Access via attribute
+    ranked = sorted(state.properties, key=lambda p: (
+        next((tc["distance_km"] for tc in state.transport_costs if tc["property_id"] == p["id"]), 5.0) * feedback_weights["proximity"] +
+        (p["price"] / state.salary) * feedback_weights["affordability"] +
+        (abs(p["bedrooms"] - state.family_size) * feedback_weights["family_fit"])
     ))[:3]
-    state.recommendations = ranked # Access via attribute
+    state.recommendations = ranked
+    logger.debug("Properties ranked", user_id=state.user_id, state_recommendations_len=len(state.recommendations))
     return state
 
-async def reason_step(state: AgentState): # Changed type hint
-    if not state.recommendations: # Access via attribute
+async def reason_step(state: AgentState, config: Dict[str, Any]): # Added config
+    db: AsyncSession = config["configurable"]["db"] # Access db from config
+    if not state.recommendations:
         state.recommendations = []
+        logger.debug("No recommendations to reason about", user_id=state.user_id)
         return state
-    state.recommendations = [ # Access via attribute
-        {
-            **prop,
-            "transport_cost": next((tc["cost"] for tc in state.transport_costs if tc["property_id"] == prop["id"]), 50.0), # Access via attribute
-            "affordability_score": 1 - (prop["price"] / (state.salary * 0.3)), # Access via attribute
-            "reason": await generate_reason(state, prop, next((tc["cost"] for tc in state.transport_costs if tc["property_id"] == prop["id"]), 50.0), state.language), # Access via attribute
-            "map_url": f"https://api.gebeta.app/tiles/{prop['lat']}/{prop['lon']}/15"
-        }
-        for prop in state.recommendations # Access via attribute
-    ]
-    db: AsyncSession = state.db # Access via attribute
+    
+    new_recommendations = []
+    for prop in state.recommendations:
+        transport_cost = next((tc["cost"] for tc in state.transport_costs if tc["property_id"] == prop["id"]), 50.0)
+        reason_text = await generate_reason(state, prop, transport_cost, state.language)
+        logger.debug("Generated reason for property", user_id=state.user_id, property_id=prop.get("id"), reason=reason_text)
+        new_recommendations.append(
+            {
+                **prop,
+                "transport_cost": transport_cost,
+                "affordability_score": 1 - (prop["price"] / (state.salary * 0.3)),
+                "reason": reason_text,
+                "map_url": f"https://api.gebeta.app/tiles/{prop['lat']}/{prop['lon']}/15"
+            }
+        )
+    state.recommendations = new_recommendations
+    
     log = RecommendationLog(
-        tenant_preference_id=state.tenant_preference_id, # Access via attribute
-        recommendation=state.recommendations, # Access via attribute
+        tenant_preference_id=state.tenant_preference_id,
+        recommendation=state.recommendations,
         feedback=None
     )
     db.add(log)
     await db.commit()
+    logger.debug("Recommendations and reasons generated and logged", user_id=state.user_id, state_recommendations_len=len(state.recommendations))
     return state
 
 async def run_recommendation_agent(
@@ -140,7 +156,7 @@ async def run_recommendation_agent(
     house_type: str, family_size: int, preferred_amenities: List[str], language: str,
     db: AsyncSession
 ) -> List[dict]:
-    state = AgentState( # Changed to AgentState
+    state = AgentState(
         tenant_preference_id=tenant_preference_id,
         user_id=user_id,
         job_school_location=job_school_location,
@@ -149,19 +165,28 @@ async def run_recommendation_agent(
         family_size=family_size,
         preferred_amenities=preferred_amenities,
         language=language,
-        db=db
+        # db=db # Removed from state initialization
     )
-    graph = StateGraph(AgentState) # Changed to StateGraph(AgentState)
-    graph.add_node("geocode", geocode_step)
-    graph.add_node("search", search_step)
-    graph.add_node("transport_cost", transport_cost_step)
-    graph.add_node("rank", rank_step)
-    graph.add_node("reason", reason_step)
+    graph = StateGraph(AgentState)
+    graph.add_node("geocode", RunnableLambda(geocode_step)) # Wrapped with RunnableLambda
+    graph.add_node("search", RunnableLambda(search_step)) # Wrapped with RunnableLambda
+    graph.add_node("transport_cost", RunnableLambda(transport_cost_step)) # Wrapped with RunnableLambda
+    graph.add_node("rank", RunnableLambda(rank_step)) # Wrapped with RunnableLambda
+    graph.add_node("reason", RunnableLambda(reason_step)) # Wrapped with RunnableLambda
     graph.add_edge("geocode", "search")
     graph.add_edge("search", "transport_cost")
     graph.add_edge("transport_cost", "rank")
     graph.add_edge("rank", "reason")
     graph.add_edge("reason", END)
     graph.set_entry_point("geocode")
-    result = await graph.invoke(state)
-    return result["recommendations"]
+    compiled_graph = graph.compile()
+    try:
+        result = await compiled_graph.ainvoke(state, config={"configurable": {"db": db}})
+        if result and hasattr(result, "recommendations"):
+            return result.recommendations
+        else:
+            logger.error("Langgraph ainvoke returned no recommendations", user_id=user_id, result=result)
+            return []
+    except Exception as e:
+        logger.error("Langgraph ainvoke failed", user_id=user_id, error=str(e))
+        raise # Re-raise the exception to be caught by the FastAPI endpoint

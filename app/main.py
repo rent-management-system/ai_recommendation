@@ -11,7 +11,11 @@ from app.database import AsyncSessionFactory
 app = FastAPI(title="AI Recommendation Microservice")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://*.huggingface.co", "https://*.vercel.app"],
+    allow_origins=[
+        "https://*.huggingface.co",
+        "https://*.vercel.app",
+        "https://*.hf.space",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -21,8 +25,14 @@ app.include_router(recommendation.router)
 @app.on_event("startup")
 async def startup_event():
     setup_logging()
-    redis = Redis.from_url(settings.REDIS_URL)
-    await FastAPILimiter.init(redis)
+    # Initialize rate limiter only if Redis is available; skip gracefully on failure
+    try:
+        if settings.REDIS_URL:
+            redis = Redis.from_url(settings.REDIS_URL)
+            await FastAPILimiter.init(redis)
+    except Exception as e:
+        # Running without rate limiter
+        pass
 
 
 @app.get("/health", tags=["health"])

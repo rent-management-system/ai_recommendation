@@ -5,7 +5,7 @@ from app.services.gemini import generate_reason
 from app.services.search import search_properties
 from app.models.tenant_profile import RecommendationLog
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from app.config import settings
 from structlog import get_logger
 from typing import Dict, List, Any
@@ -52,10 +52,74 @@ async def search_step(state: AgentState, config: Dict[str, Any]): # Added config
             bedrooms=state.family_size,
             preferred_amenities=state.preferred_amenities,
             user_lat=state.coords["lat"],
-            user_lon=state.coords["lon"]
+            user_lon=state.coords["lon"],
+            status="APPROVED"
         )
+        # Keep only APPROVED properties
+        results = [p for p in results if str(p.get("status", "")).upper() == "APPROVED"]
+        # Fallback 1: Broaden filters if fewer than 3 results
+        if len(results) < 3:
+            try:
+                broader = await search_properties(
+                    location=state.job_school_location,
+                    min_price=0.1 * state.salary,
+                    max_price=0.5 * state.salary,
+                    house_type=None,
+                    bedrooms=None,
+                    preferred_amenities=None,
+                    user_lat=state.coords["lat"],
+                    user_lon=state.coords["lon"],
+                    status="APPROVED"
+                )
+                broader = [p for p in broader if str(p.get("status", "")).upper() == "APPROVED"]
+                # Combine while preserving uniqueness by id
+                seen = {p.get("id") for p in results}
+                for p in broader:
+                    if p.get("id") not in seen:
+                        results.append(p)
+                        seen.add(p.get("id"))
+            except Exception as ee:
+                logger.warning("Broader search failed", user_id=state.user_id, error=str(ee))
+
+        # Fallback 2: DB-level fallback if still fewer than 3
+        if len(results) < 3:
+            try:
+                min_p = 0.1 * state.salary
+                max_p = 0.6 * state.salary
+                # Try to fetch APPROVED properties from DB near the location (ILIKE) and within price band
+                sql = text(
+                    """
+                    SELECT id, title, location, price, house_type, bedrooms, amenities, lat, lon, status
+                    FROM properties
+                    WHERE status = 'APPROVED'
+                      AND price BETWEEN :min_price AND :max_price
+                      AND (location ILIKE :loc OR :loc = '')
+                    ORDER BY random()
+                    LIMIT 10
+                    """
+                )
+                loc_pattern = f"%{state.job_school_location}%" if state.job_school_location else ""
+                result = await db.execute(sql, {"min_price": min_p, "max_price": max_p, "loc": loc_pattern})
+                rows = result.fetchall()
+                cols = result.keys()
+                db_props = [dict(zip(cols, row)) for row in rows]
+                # Merge unique by id
+                seen = {p.get("id") for p in results}
+                for p in db_props:
+                    if p.get("id") not in seen:
+                        results.append(p)
+                        seen.add(p.get("id"))
+            except Exception as ee:
+                logger.warning("DB fallback search failed", user_id=state.user_id, error=str(ee))
+
         state.properties = results[:10] or []
-        logger.debug("Search properties results", user_id=state.user_id, results_type=type(results), results_len=len(results), state_properties_len=len(state.properties))
+        logger.debug(
+            "Search properties results",
+            user_id=state.user_id,
+            results_type=type(results),
+            results_len=len(results),
+            state_properties_len=len(state.properties)
+        )
     except Exception as e:
         state.properties = []
         logger.warning("Search failed, returning empty properties", user_id=state.user_id, error=str(e))

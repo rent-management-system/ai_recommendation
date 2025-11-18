@@ -13,6 +13,8 @@ from pydantic import BaseModel
 import json
 import pandas as pd
 from langchain_core.runnables import RunnableLambda # Added import
+from uuid import UUID
+from decimal import Decimal
 
 logger = get_logger()
 
@@ -423,9 +425,25 @@ async def reason_step(state: AgentState, config: Dict[str, Any]): # Added config
         )
     state.recommendations = new_recommendations
     
+    # Ensure JSON-serializable payload (convert UUID/Decimal)
+    def to_jsonable(obj: Any):
+        if isinstance(obj, UUID):
+            return str(obj)
+        if isinstance(obj, Decimal):
+            try:
+                return float(obj)
+            except Exception:
+                return str(obj)
+        return obj
+    try:
+        serialized_recs = json.loads(json.dumps(state.recommendations, default=to_jsonable))
+    except Exception:
+        # As a last resort, stringify everything
+        serialized_recs = json.loads(json.dumps(state.recommendations, default=str))
+
     log = RecommendationLog(
         tenant_preference_id=state.tenant_preference_id,
-        recommendation=state.recommendations,
+        recommendation=serialized_recs,
         feedback=None
     )
     db.add(log)

@@ -15,12 +15,22 @@ async def generate_reason(tenant_profile: dict,
                           transport_cost: float,
                           language: str,
                           context: dict | None = None) -> str:
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # Prefer Gemini 2.0 Flash, fall back to 1.5 Flash if unavailable
+    primary_model = 'gemini-2.0-flash'
+    fallback_model = 'gemini-1.5-flash-latest'
     lang_map = {"en": "English", "am": "Amharic", "or": "Afaan Oromo"}
     prompt = build_reason_prompt(tenant_profile, property, context, language)
     try:
-        response = await model.generate_content(prompt)
+        model = genai.GenerativeModel(primary_model)
+        response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        logger.error("Gemini API failed", error=str(e))
-        return f"Reason generation failed in {lang_map[language]}."
+        # Fallback if the primary model is not available in current region/version
+        logger.error("Gemini API failed on primary model", error=str(e), model=primary_model)
+        try:
+            model = genai.GenerativeModel(fallback_model)
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e2:
+            logger.error("Gemini API failed on fallback model", error=str(e2), model=fallback_model)
+            return f"Reason generation failed in {lang_map[language]}."

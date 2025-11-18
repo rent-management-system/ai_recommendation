@@ -35,8 +35,25 @@ async def get_matrix(
     Raises AuthError for 401/403 (no retries). Raises RequestError for network transient errors.
     """
     url = f"{API_BASE}{ONM_PATH}"
-    destinations_json_str = json.dumps([{"lat": d[0], "lon": d[1]} for d in destinations])
-    params = {"origin": f"{lat},{lon}", "json": destinations_json_str, "apiKey": settings.GEBETA_API_KEY}
+    # Sanitize coordinates
+    def valid_pair(a: float, b: float) -> bool:
+        try:
+            return -90.0 <= float(a) <= 90.0 and -180.0 <= float(b) <= 180.0
+        except Exception:
+            return False
+    try:
+        o_lat = round(float(lat), 6)
+        o_lon = round(float(lon), 6)
+    except Exception:
+        raise ValueError("Origin coordinates invalid")
+    dest_list = []
+    for d in destinations:
+        if isinstance(d, (list, tuple)) and len(d) == 2 and valid_pair(d[0], d[1]):
+            dest_list.append({"lat": round(float(d[0]), 6), "lon": round(float(d[1]), 6)})
+    if not dest_list:
+        raise ValueError("No valid destination coordinates for ONM")
+    destinations_json_str = json.dumps(dest_list)
+    params = {"origin": f"{o_lat},{o_lon}", "json": destinations_json_str, "apiKey": settings.GEBETA_API_KEY}
 
     try:
         async with httpx.AsyncClient() as client:

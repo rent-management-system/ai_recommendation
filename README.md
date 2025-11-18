@@ -112,21 +112,21 @@ graph TD
     I --> L;
     I --> N;
 
-    style A fill:#e0e0e0,stroke:#666,stroke-width:2px,color:#333;
-    style B fill:#a0c4ff,stroke:#666,stroke-width:2px,color:#333;
-    style C fill:#c0c0c0,stroke:#666,stroke-width:2px,color:#333;
-    style D fill:#c9f7c9,stroke:#666,stroke-width:2px,color:#333;
-    style E fill:#c0c0c0,stroke:#666,stroke-width:2px,color:#333;
-    style F fill:#c9f7c9,stroke:#666,stroke-width:2px,color:#333;
-    style G fill:#ffc0c0,stroke:#666,stroke-width:2px,color:#333;
-    style H fill:#ffc0ff,stroke:#666,stroke-width:2px,color:#333;
-    style I fill:#ffffc0,stroke:#666,stroke-width:2px,color:#333;
-    style J fill:#e0f2f7,stroke:#666,stroke-width:1px,color:#333;
-    style K fill:#e0f2f7,stroke:#666,stroke-width:1px,color:#333;
-    style L fill:#e0f2f7,stroke:#666,stroke-width:1px,color:#333;
-    style M fill:#e0f2f7,stroke:#666,stroke-width:1px,color:#333;
-    style N fill:#e0f2f7,stroke:#666,stroke-width:1px,color:#333;
-    style O fill:#e0f2f7,stroke:#666,stroke-width:1px,color:#333;
+    style A fill:#e0e0e0,stroke:#666,stroke-width:2px;
+    style B fill:#a0c4ff,stroke:#666,stroke-width:2px;
+    style C fill:#c0c0c0,stroke:#666,stroke-width:2px;
+    style D fill:#c9f7c9,stroke:#666,stroke-width:2px;
+    style E fill:#c0c0c0,stroke:#666,stroke-width:2px;
+    style F fill:#c9f7c9,stroke:#666,stroke-width:2px;
+    style G fill:#ffc0c0,stroke:#666,stroke-width:2px;
+    style H fill:#ffc0ff,stroke:#666,stroke-width:2px;
+    style I fill:#ffffc0,stroke:#666,stroke-width:2px;
+    style J fill:#e0f2f7,stroke:#666,stroke-width:1px;
+    style K fill:#e0f2f7,stroke:#666,stroke-width:1px;
+    style L fill:#e0f2f7,stroke:#666,stroke-width:1px;
+    style M fill:#e0f2f7,stroke:#666,stroke-width:1px;
+    style N fill:#e0f2f7,stroke:#666,stroke-width:1px;
+    style O fill:#e0f2f7,stroke:#666,stroke-width:1px;
 ```
 
 **Explanation of Components:**
@@ -332,7 +332,7 @@ Get personalized property recommendations for a tenant.
     {
         "recommendations": [
             {
-                "property_id": "uuid-of-property-1",
+        "property_id": "uuid-of-property-1",
                 "title": "Apartment in Bole",
                 "location": "Bole, Addis Ababa",
                 "price": 1500.0,

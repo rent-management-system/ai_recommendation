@@ -39,6 +39,12 @@ class AgentState(BaseModel):
 
 async def geocode_step(state: AgentState, config: Dict[str, Any]):
     db: AsyncSession = config["configurable"]["db"]
+    # Prefer well-known Addis coordinates for common districts to avoid wrong city inference
+    loc_lower = (state.job_school_location or "").strip().lower()
+    if any(k in loc_lower for k in ["bole", "addis", "piazza", "mexico", "sarbet", "cmc", "megenagna"]):
+        state.coords = {"lat": 9.0, "lon": 38.7}
+        logger.debug("Geocoding shortcut for Addis area", location=state.job_school_location, coords=state.coords)
+        return state
     # Try to infer coordinates from local transport data if available
     inferred = None
     try:
@@ -394,16 +400,14 @@ async def reason_step(state: AgentState, config: Dict[str, Any]): # Added config
         transport_cost = tc["cost"] if tc else 50.0
         distance_km = tc["distance_km"] if tc else 5.0
         fare = tc.get("fare") if tc else 10.0
-        route_source = tc.get("route_source") if tc else state.job_school_location
-        route_destination = tc.get("route_destination") if tc else prop.get("location", "")
+        # Avoid including specific route names in the reasoning context to reduce confusion
         # Build reasoning context
         context = {
             "distance_km": distance_km,
             "monthly_transport_cost": transport_cost,
             "single_trip_fare": fare,
-            "route_source": route_source,
-            "route_destination": route_destination,
-            "rent_price": prop.get("price"),
+            # Do not include route names in prompt context
+            "rent_price": float(prop.get("price", 0.0)) if isinstance(prop.get("price", 0.0), (int, float)) or str(prop.get("price", "")).replace('.', '', 1).isdigit() else float(str(prop.get("price", 0.0)).replace("Decimal(", "").replace(")", "").replace("'", "")) if str(prop.get("price", "")).startswith("Decimal") else 0.0,
             "salary": state.salary,
             "family_size": state.family_size,
             "bedrooms": prop.get("bedrooms"),
@@ -428,8 +432,8 @@ async def reason_step(state: AgentState, config: Dict[str, Any]): # Added config
                     "location": prop.get("location"),
                 },
                 "route": {
-                    "source": route_source,
-                    "destination": route_destination,
+                    "source": tc.get("route_source") if tc else state.job_school_location,
+                    "destination": tc.get("route_destination") if tc else prop.get("location", ""),
                     "distance_km": distance_km,
                     "fare": fare,
                     "monthly_cost": transport_cost,

@@ -94,39 +94,39 @@ graph TD
     B -->|8. Vector Search (RAG)| I(ChromaDB);
 
     subgraph Recommendation Workflow (LangGraph Agent)
-        B --&gt; J[Geocoding Step];
-        J --&gt; K[Property Search Step];
-        K --&gt; L[Transport Cost Calculation Step];
-        L --&gt; M[Ranking Step];
-        M --&gt; N[Reason Generation Step];
-        N --&gt; O[Log & Return Recommendations];
+        B --> J[Geocoding Step];
+        J --> K[Property Search Step];
+        K --> L[Transport Cost Calculation Step];
+        L --> M[Ranking Step];
+        M --> N[Reason Generation Step];
+        N --> O[Log & Return Recommendations];
     end
 
-    J --&gt; D;
-    K --&gt; E;
-    L --&gt; D;
-    N --&gt; F;
-    K --&gt; G;
-    O --&gt; G;
-    I --&gt; K;
-    I --&gt; L;
-    I --&gt; N;
+    J --> D;
+    K --> E;
+    L --> D;
+    N --> F;
+    K --> G;
+    O --> G;
+    I --> K;
+    I --> L;
+    I --> N;
 
-    style A fill:#f9f,stroke:#333,stroke-width:2px;
-    style B fill:#bbf,stroke:#333,stroke-width:2px;
-    style C fill:#ccf,stroke:#333,stroke-width:2px;
-    style D fill:#cfc,stroke:#333,stroke-width:2px;
-    style E fill:#ccf,stroke:#333,stroke-width:2px;
-    style F fill:#cfc,stroke:#333,stroke-width:2px;
-    style G fill:#fcc,stroke:#333,stroke-width:2px;
-    style H fill:#fcf,stroke:#333,stroke-width:2px;
-    style I fill:#ffc,stroke:#333,stroke-width:2px;
-    style J fill:#add8e6,stroke:#333,stroke-width:1px;
-    style K fill:#add8e6,stroke:#333,stroke-width:1px;
-    style L fill:#add8e6,stroke:#333,stroke-width:1px;
-    style M fill:#add8e6,stroke:#333,stroke-width:1px;
-    style N fill:#add8e6,stroke:#333,stroke-width:1px;
-    style O fill:#add8e6,stroke:#333,stroke-width:1px;
+    style A fill:#e0e0e0,stroke:#666,stroke-width:2px,color:#333;
+    style B fill:#a0c4ff,stroke:#666,stroke-width:2px,color:#333;
+    style C fill:#c0c0c0,stroke:#666,stroke-width:2px,color:#333;
+    style D fill:#c9f7c9,stroke:#666,stroke-width:2px,color:#333;
+    style E fill:#c0c0c0,stroke:#666,stroke-width:2px,color:#333;
+    style F fill:#c9f7c9,stroke:#666,stroke-width:2px,color:#333;
+    style G fill:#ffc0c0,stroke:#666,stroke-width:2px,color:#333;
+    style H fill:#ffc0ff,stroke:#666,stroke-width:2px,color:#333;
+    style I fill:#ffffc0,stroke:#666,stroke-width:2px,color:#333;
+    style J fill:#e0f2f7,stroke:#666,stroke-width:1px,color:#333;
+    style K fill:#e0f2f7,stroke:#666,stroke-width:1px,color:#333;
+    style L fill:#e0f2f7,stroke:#666,stroke-width:1px,color:#333;
+    style M fill:#e0f2f7,stroke:#666,stroke-width:1px,color:#333;
+    style N fill:#e0f2f7,stroke:#666,stroke-width:1px,color:#333;
+    style O fill:#e0f2f7,stroke:#666,stroke-width:1px,color:#333;
 ```
 
 **Explanation of Components:**

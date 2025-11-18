@@ -341,11 +341,27 @@ async def rank_step(state: AgentState, config: Dict[str, Any]): # Added config
         feedback_weights["proximity"] += 0.1
         feedback_weights["affordability"] -= 0.05
         feedback_weights["family_fit"] -= 0.05
-    ranked = sorted(state.properties, key=lambda p: (
-        next((tc["distance_km"] for tc in state.transport_costs if tc["property_id"] == p["id"]), 5.0) * feedback_weights["proximity"] +
-        (p["price"] / state.salary) * feedback_weights["affordability"] +
-        (abs(p["bedrooms"] - state.family_size) * feedback_weights["family_fit"])
-    ))[:3]
+    def rank_key(p: Dict[str, Any]):
+        distance_component = next((tc["distance_km"] for tc in state.transport_costs if tc["property_id"] == p.get("id")), 5.0)
+        # Coerce Decimal to float where needed
+        try:
+            price_val = float(p.get("price", 0.0))
+        except Exception:
+            price_val = 0.0
+        affordability_component = (price_val / float(state.salary or 1.0))
+        bedrooms_val = p.get("bedrooms")
+        try:
+            bedrooms_val = int(bedrooms_val) if bedrooms_val is not None else int(state.family_size)
+        except Exception:
+            bedrooms_val = int(state.family_size)
+        family_fit_component = abs(bedrooms_val - int(state.family_size))
+        return (
+            distance_component * feedback_weights["proximity"] +
+            affordability_component * feedback_weights["affordability"] +
+            family_fit_component * feedback_weights["family_fit"]
+        )
+
+    ranked = sorted(state.properties, key=rank_key)[:3]
     state.recommendations = ranked
     logger.debug("Properties ranked", user_id=state.user_id, state_recommendations_len=len(state.recommendations))
     return state
@@ -385,7 +401,7 @@ async def reason_step(state: AgentState, config: Dict[str, Any]): # Added config
             {
                 **prop,
                 "transport_cost": transport_cost,
-                "affordability_score": 1 - (prop["price"] / (state.salary * 0.3)),
+                "affordability_score": 1 - (float(prop.get("price", 0.0)) / float((state.salary or 1.0) * 0.3)),
                 "reason": reason_text,
                 "reason_details": context,
                 "map_url": f"https://api.gebeta.app/tiles/{prop['lat']}/{prop['lon']}/15",

@@ -40,7 +40,7 @@ async def get_matrix(
 
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.get(url, params=params, timeout=15.0)
+            resp = await client.get(url, params=params, timeout=15.0, follow_redirects=True)
             status = resp.status_code
             text = resp.text
 

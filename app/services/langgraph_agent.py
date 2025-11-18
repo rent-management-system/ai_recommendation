@@ -37,92 +37,210 @@ class AgentState(BaseModel):
 
 async def geocode_step(state: AgentState, config: Dict[str, Any]):
     db: AsyncSession = config["configurable"]["db"]
-    state.coords = {"lat": 9.0, "lon": 38.7} # Fallback coordinates, geocoding skipped due to free plan limitations
-    logger.warning("Geocoding skipped, using fallback coordinates", location=state.job_school_location, coords=state.coords)
+    # Try to infer coordinates from local transport data if available
+    inferred = None
+    try:
+        with open("train_data/transport_price_data.json", "r") as f:
+            transport_data = pd.DataFrame(json.load(f))
+        loc = (state.job_school_location or "").strip()
+        if loc and not transport_data.empty:
+            mask = (
+                transport_data["source"].astype(str).str.contains(loc, case=False, na=False) |
+                transport_data["destination"].astype(str).str.contains(loc, case=False, na=False)
+            )
+            matches = transport_data[mask]
+            candidates = []
+            for _, row in matches.iterrows():
+                # Prefer exact side matches if possible
+                if isinstance(row.get("source"), str) and loc.lower() in row.get("source").lower():
+                    if pd.notna(row.get("source_lat")) and pd.notna(row.get("source_lon")):
+                        candidates.append((float(row.get("source_lat")), float(row.get("source_lon"))))
+                if isinstance(row.get("destination"), str) and loc.lower() in row.get("destination").lower():
+                    if pd.notna(row.get("dest_lat")) and pd.notna(row.get("dest_lon")):
+                        candidates.append((float(row.get("dest_lat")), float(row.get("dest_lon"))))
+            if not candidates:
+                # Fall back to any lat/lon from matches
+                for _, row in matches.iterrows():
+                    if pd.notna(row.get("source_lat")) and pd.notna(row.get("source_lon")):
+                        candidates.append((float(row.get("source_lat")), float(row.get("source_lon"))))
+                    if pd.notna(row.get("dest_lat")) and pd.notna(row.get("dest_lon")):
+                        candidates.append((float(row.get("dest_lat")), float(row.get("dest_lon"))))
+            if candidates:
+                avg_lat = sum(c[0] for c in candidates) / len(candidates)
+                avg_lon = sum(c[1] for c in candidates) / len(candidates)
+                inferred = {"lat": avg_lat, "lon": avg_lon}
+    except Exception as e:
+        logger.warning("Local geocode inference failed, will use fallback", error=str(e))
+
+    if inferred:
+        state.coords = inferred
+        logger.debug("Geocoding inferred from transport data", location=state.job_school_location, coords=state.coords)
+    else:
+        state.coords = {"lat": 9.0, "lon": 38.7} # Fallback coordinates
+        logger.warning("Geocoding skipped, using fallback coordinates", location=state.job_school_location, coords=state.coords)
     return state
 
 async def search_step(state: AgentState, config: Dict[str, Any]): # Added config
     db: AsyncSession = config["configurable"]["db"] # Access db from config
+    results: List[Dict[str, Any]] = []
+    # Primary DB search (narrow band, APPROVED)
     try:
-        results = await search_properties(
-            location=state.job_school_location,
-            min_price=0.2 * state.salary,
-            max_price=0.3 * state.salary,
-            house_type=state.house_type,
-            bedrooms=state.family_size,
-            preferred_amenities=state.preferred_amenities,
-            user_lat=state.coords["lat"],
-            user_lon=state.coords["lon"],
-            status="APPROVED"
-        )
-        # Keep only APPROVED properties
-        results = [p for p in results if str(p.get("status", "")).upper() == "APPROVED"]
-        # Fallback 1: Broaden filters if fewer than 3 results
-        if len(results) < 3:
-            try:
-                broader = await search_properties(
-                    location=state.job_school_location,
-                    min_price=0.1 * state.salary,
-                    max_price=0.5 * state.salary,
-                    house_type=None,
-                    bedrooms=None,
-                    preferred_amenities=None,
-                    user_lat=state.coords["lat"],
-                    user_lon=state.coords["lon"],
-                    status="APPROVED"
-                )
-                broader = [p for p in broader if str(p.get("status", "")).upper() == "APPROVED"]
-                # Combine while preserving uniqueness by id
-                seen = {p.get("id") for p in results}
-                for p in broader:
-                    if p.get("id") not in seen:
-                        results.append(p)
-                        seen.add(p.get("id"))
-            except Exception as ee:
-                logger.warning("Broader search failed", user_id=state.user_id, error=str(ee))
-
-        # Fallback 2: DB-level fallback if still fewer than 3
-        if len(results) < 3:
-            try:
-                min_p = 0.1 * state.salary
-                max_p = 0.6 * state.salary
-                # Try to fetch APPROVED properties from DB near the location (ILIKE) and within price band
-                sql = text(
-                    """
-                    SELECT id, title, location, price, house_type, bedrooms, amenities, lat, lon, status
-                    FROM properties
-                    WHERE status = 'APPROVED'
-                      AND price BETWEEN :min_price AND :max_price
-                      AND (location ILIKE :loc OR :loc = '')
-                    ORDER BY random()
-                    LIMIT 10
-                    """
-                )
-                loc_pattern = f"%{state.job_school_location}%" if state.job_school_location else ""
-                result = await db.execute(sql, {"min_price": min_p, "max_price": max_p, "loc": loc_pattern})
-                rows = result.fetchall()
-                cols = result.keys()
-                db_props = [dict(zip(cols, row)) for row in rows]
-                # Merge unique by id
-                seen = {p.get("id") for p in results}
-                for p in db_props:
-                    if p.get("id") not in seen:
-                        results.append(p)
-                        seen.add(p.get("id"))
-            except Exception as ee:
-                logger.warning("DB fallback search failed", user_id=state.user_id, error=str(ee))
-
-        state.properties = results[:10] or []
-        logger.debug(
-            "Search properties results",
-            user_id=state.user_id,
-            results_type=type(results),
-            results_len=len(results),
-            state_properties_len=len(state.properties)
-        )
+        min_p = 0.2 * state.salary
+        max_p = 0.3 * state.salary
+        loc_pattern = f"%{state.job_school_location}%" if state.job_school_location else ""
+        where_clauses = [
+            "status = 'APPROVED'",
+            "price BETWEEN :min_price AND :max_price",
+        ]
+        params = {"min_price": min_p, "max_price": max_p}
+        # Optional location
+        where_clauses.append("(location ILIKE :loc OR :loc = '')")
+        params["loc"] = loc_pattern
+        # Optional house_type
+        if state.house_type:
+            where_clauses.append("house_type = :house_type")
+            params["house_type"] = state.house_type
+        # Optional amenities containment
+        if state.preferred_amenities:
+            params["amenities"] = json.dumps(state.preferred_amenities)
+            where_clauses.append("amenities @> CAST(:amenities AS JSONB)")
+        where_sql = " AND ".join(where_clauses)
+        sql_primary = text(f"""
+            SELECT id, title, location, price, house_type, amenities, photos AS images, lat, lon, status
+            FROM properties
+            WHERE {where_sql}
+            ORDER BY price ASC, updated_at DESC
+            LIMIT 20
+        """)
+        result = await db.execute(sql_primary, params)
+        rows = result.fetchall()
+        cols = result.keys()
+        primary = [dict(zip(cols, row)) for row in rows]
+        results.extend(primary)
     except Exception as e:
-        state.properties = []
-        logger.warning("Search failed, returning empty properties", user_id=state.user_id, error=str(e))
+        await db.rollback()
+        logger.warning("Primary DB search failed; will attempt fallbacks", user_id=state.user_id, error=str(e))
+
+    # Fallback 1: Broadened DB search (wider price, relax house_type/bedrooms/amenities)
+    if len(results) < 3:
+        try:
+            min_p = 0.1 * state.salary
+            max_p = 0.5 * state.salary
+            loc_pattern = f"%{state.job_school_location}%" if state.job_school_location else ""
+            sql_broaden = text(
+                """
+                SELECT id, title, location, price, house_type, amenities, photos AS images, lat, lon, status
+                FROM properties
+                WHERE status = 'APPROVED'
+                  AND price BETWEEN :min_price AND :max_price
+                  AND (location ILIKE :loc OR :loc = '')
+                ORDER BY price ASC, updated_at DESC
+                LIMIT 30
+                """
+            )
+            result = await db.execute(sql_broaden, {"min_price": min_p, "max_price": max_p, "loc": loc_pattern})
+            rows = result.fetchall()
+            cols = result.keys()
+            broader = [dict(zip(cols, row)) for row in rows]
+            seen = {p.get("id") for p in results}
+            for p in broader:
+                if p.get("id") not in seen:
+                    results.append(p)
+                    seen.add(p.get("id"))
+        except Exception as ee:
+            await db.rollback()
+            logger.warning("Broader search failed", user_id=state.user_id, error=str(ee))
+
+    # Fallback 2: DB-level query
+    if len(results) < 3:
+        try:
+            min_p = 0.1 * state.salary
+            max_p = 0.6 * state.salary
+            sql = text(
+                """
+                SELECT id, title, location, price, house_type, amenities, lat, lon, status
+                FROM properties
+                WHERE status = 'APPROVED'
+                  AND price BETWEEN :min_price AND :max_price
+                  AND (location ILIKE :loc OR :loc = '')
+                ORDER BY random()
+                LIMIT 10
+                """
+            )
+            loc_pattern = f"%{state.job_school_location}%" if state.job_school_location else ""
+            result = await db.execute(sql, {"min_price": min_p, "max_price": max_p, "loc": loc_pattern})
+            rows = result.fetchall()
+            cols = result.keys()
+            db_props = [dict(zip(cols, row)) for row in rows]
+            seen = {p.get("id") for p in results}
+            for p in db_props:
+                if p.get("id") not in seen:
+                    results.append(p)
+                    seen.add(p.get("id"))
+        except Exception as ee:
+            await db.rollback()
+            logger.warning("DB fallback search failed", user_id=state.user_id, error=str(ee))
+
+    # Fallback 3: DB wide query ignoring location (still APPROVED). First within wide price range, then any APPROVED.
+    if len(results) < 3:
+        try:
+            min_p = 0.1 * state.salary
+            max_p = 0.7 * state.salary
+            sql_wide = text(
+                """
+                SELECT id, title, location, price, house_type, amenities, lat, lon, status
+                FROM properties
+                WHERE status = 'APPROVED'
+                  AND price BETWEEN :min_price AND :max_price
+                ORDER BY random()
+                LIMIT 20
+                """
+            )
+            result = await db.execute(sql_wide, {"min_price": min_p, "max_price": max_p})
+            rows = result.fetchall()
+            cols = result.keys()
+            wide_props = [dict(zip(cols, row)) for row in rows]
+            seen = {p.get("id") for p in results}
+            for p in wide_props:
+                if p.get("id") not in seen:
+                    results.append(p)
+                    seen.add(p.get("id"))
+        except Exception as ee:
+            await db.rollback()
+            logger.warning("DB wide fallback failed", user_id=state.user_id, error=str(ee))
+
+    if len(results) < 3:
+        try:
+            sql_any = text(
+                """
+                SELECT id, title, location, price, house_type, amenities, lat, lon, status
+                FROM properties
+                WHERE status = 'APPROVED'
+                ORDER BY random()
+                LIMIT 20
+                """
+            )
+            result = await db.execute(sql_any)
+            rows = result.fetchall()
+            cols = result.keys()
+            any_props = [dict(zip(cols, row)) for row in rows]
+            seen = {p.get("id") for p in results}
+            for p in any_props:
+                if p.get("id") not in seen:
+                    results.append(p)
+                    seen.add(p.get("id"))
+        except Exception as ee:
+            await db.rollback()
+            logger.warning("DB any-approved fallback failed", user_id=state.user_id, error=str(ee))
+
+    state.properties = results[:10] or []
+    logger.debug(
+        "Search properties results",
+        user_id=state.user_id,
+        results_type=type(results),
+        results_len=len(results),
+        state_properties_len=len(state.properties)
+    )
     return state
 
 async def transport_cost_step(state: AgentState, config: Dict[str, Any]): # Added config
@@ -139,6 +257,16 @@ async def transport_cost_step(state: AgentState, config: Dict[str, Any]): # Adde
         try:
             distances = await get_matrix(state.coords["lat"], state.coords["lon"], destinations)
             logger.debug("Get matrix results", user_id=state.user_id, distances_type=type(distances), distances_len=len(distances) if distances else 0)
+            # Helper: haversine distance in km
+            def haversine(lat1, lon1, lat2, lon2):
+                from math import radians, sin, cos, sqrt, atan2
+                R = 6371.0
+                dlat = radians(lat2 - lat1)
+                dlon = radians(lon2 - lon1)
+                a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
+                c = 2 * atan2(sqrt(a), sqrt(1 - a))
+                return R * c
+
             for prop, distance in zip(state.properties, distances):
                 distance_km = distance["distance"] / 1000
                 route = f"{state.job_school_location} to {prop['location']}"
@@ -146,14 +274,54 @@ async def transport_cost_step(state: AgentState, config: Dict[str, Any]): # Adde
                     (transport_data["source"].str.contains(state.job_school_location, case=False)) &
                     (transport_data["destination"].str.contains(prop["location"], case=False))
                 ]
+                # If no name match, try nearest-route matching using coordinates
+                if matching_routes.empty:
+                    try:
+                        # Ensure numeric columns exist
+                        td = transport_data.copy()
+                        for col in ["source_lat", "source_lon", "dest_lat", "dest_lon"]:
+                            if col not in td.columns:
+                                td[col] = None
+                        td = td.dropna(subset=["source_lat", "source_lon", "dest_lat", "dest_lon"])
+                        if not td.empty and prop.get("lat") and prop.get("lon"):
+                            # Compute distance from user to source stop + property to dest stop
+                            td = td.assign(
+                                user_to_source_km=td.apply(lambda r: haversine(state.coords["lat"], state.coords["lon"], float(r["source_lat"]), float(r["source_lon"])), axis=1),
+                            )
+                            td = td.assign(
+                                prop_to_dest_km=td.apply(lambda r: haversine(prop["lat"], prop["lon"], float(r["dest_lat"]), float(r["dest_lon"])), axis=1),
+                            )
+                            td = td.assign(total_nearness_km=td["user_to_source_km"] + td["prop_to_dest_km"])
+                            # Choose the route with minimal total nearness
+                            best = td.sort_values("total_nearness_km").head(1)
+                            matching_routes = best
+                    except Exception as ex:
+                        logger.warning("Nearest-route matching failed", user_id=state.user_id, error=str(ex))
+
                 fare = matching_routes["price"].iloc[0] if not matching_routes.empty else 10.0
+                route_source = matching_routes["source"].iloc[0] if not matching_routes.empty else state.job_school_location
+                route_destination = matching_routes["destination"].iloc[0] if not matching_routes.empty else prop["location"]
                 monthly_cost = fare * 2 * 20  # Round-trip, 20 days/month
-                state.transport_costs.append({"property_id": prop["id"], "cost": monthly_cost, "distance_km": distance_km})
+                state.transport_costs.append({
+                    "property_id": prop["id"],
+                    "cost": monthly_cost,
+                    "distance_km": distance_km,
+                    "fare": float(fare),
+                    "route_source": route_source,
+                    "route_destination": route_destination,
+                })
             logger.debug("Transport costs calculated", user_id=state.user_id, state_transport_costs_len=len(state.transport_costs))
         except Exception as e:
             logger.warning("Matrix API failed, using fallback fares", user_id=state.user_id, error=str(e))
             for prop in state.properties:
-                state.transport_costs.append({"property_id": prop["id"], "cost": 50.0, "distance_km": 5.0})
+                state.transport_costs.append({
+                    "property_id": prop["id"],
+                    "cost": 50.0,
+                    "distance_km": 5.0,
+                    "fare": 10.0,
+                    "route_source": state.job_school_location,
+                    "route_destination": prop.get("location", ""),
+                })
     return state
 
 async def rank_step(state: AgentState, config: Dict[str, Any]): # Added config
@@ -191,8 +359,27 @@ async def reason_step(state: AgentState, config: Dict[str, Any]): # Added config
     
     new_recommendations = []
     for prop in state.recommendations:
-        transport_cost = next((tc["cost"] for tc in state.transport_costs if tc["property_id"] == prop["id"]), 50.0)
-        reason_text = await generate_reason(state, prop, transport_cost, state.language)
+        tc = next((tc for tc in state.transport_costs if tc["property_id"] == prop["id"]), None)
+        transport_cost = tc["cost"] if tc else 50.0
+        distance_km = tc["distance_km"] if tc else 5.0
+        fare = tc.get("fare") if tc else 10.0
+        route_source = tc.get("route_source") if tc else state.job_school_location
+        route_destination = tc.get("route_destination") if tc else prop.get("location", "")
+        # Build reasoning context
+        context = {
+            "distance_km": distance_km,
+            "monthly_transport_cost": transport_cost,
+            "single_trip_fare": fare,
+            "route_source": route_source,
+            "route_destination": route_destination,
+            "rent_price": prop.get("price"),
+            "salary": state.salary,
+            "family_size": state.family_size,
+            "bedrooms": prop.get("bedrooms"),
+            "amenities": prop.get("amenities", []),
+            "house_type": prop.get("house_type"),
+        }
+        reason_text = await generate_reason(state, prop, transport_cost, state.language, context)
         logger.debug("Generated reason for property", user_id=state.user_id, property_id=prop.get("id"), reason=reason_text)
         new_recommendations.append(
             {
@@ -200,7 +387,22 @@ async def reason_step(state: AgentState, config: Dict[str, Any]): # Added config
                 "transport_cost": transport_cost,
                 "affordability_score": 1 - (prop["price"] / (state.salary * 0.3)),
                 "reason": reason_text,
-                "map_url": f"https://api.gebeta.app/tiles/{prop['lat']}/{prop['lon']}/15"
+                "reason_details": context,
+                "map_url": f"https://api.gebeta.app/tiles/{prop['lat']}/{prop['lon']}/15",
+                "images": prop.get("photos") or prop.get("images") or [],
+                "details": {
+                    "bedrooms": prop.get("bedrooms"),
+                    "house_type": prop.get("house_type"),
+                    "amenities": prop.get("amenities", []),
+                    "location": prop.get("location"),
+                },
+                "route": {
+                    "source": route_source,
+                    "destination": route_destination,
+                    "distance_km": distance_km,
+                    "fare": fare,
+                    "monthly_cost": transport_cost,
+                }
             }
         )
     state.recommendations = new_recommendations

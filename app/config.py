@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = "your_gemini_key"
     USER_MANAGEMENT_URL: str = "https://rent-managment-system-user-magt.onrender.com"
     SEARCH_FILTERS_URL: str = "http://search-filters:8000"
+    READ_ONLY_MODE: bool = False
 
     
 

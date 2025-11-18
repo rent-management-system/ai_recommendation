@@ -5,6 +5,7 @@ from app.schemas.recommendation import RecommendationRequest, RecommendationResp
 from app.schemas.property_search import PropertySearchRequest, PropertySearchResponse
 from app.services.langgraph_agent import run_recommendation_agent
 from app.services.rag import save_tenant_preference
+from app.config import settings
 from app.services.property_search import generate_sql_query, execute_sql_query
 from app.dependencies.auth import get_current_user
 from app.database import get_session
@@ -23,6 +24,7 @@ async def get_recommendations(request: RecommendationRequest, user_coroutine: di
     if user["role"].lower() != "tenant":
         raise HTTPException(status_code=403, detail="Only Tenants can get recommendations")
     try:
+        # Always save tenant preference; read-only applies to base tables (e.g., properties), not logs/preferences
         tenant_preference_id = await save_tenant_preference(user["user_id"], request, db)
         recommendations = await run_recommendation_agent(
             tenant_preference_id=tenant_preference_id,
@@ -60,6 +62,7 @@ async def feedback(request: dict, user_coroutine: dict = Depends(get_current_use
     user = await user_coroutine # Await the user coroutine
     if user["role"].lower() != "tenant":
         raise HTTPException(status_code=403, detail="Only Tenants can provide feedback")
+    # Feedback is allowed; it writes to logs, not base property data
     if "tenant_preference_id" not in request or "property_id" not in request or "liked" not in request:
         raise HTTPException(status_code=422, detail="Missing required fields")
     log = RecommendationLog(tenant_preference_id=request["tenant_preference_id"], feedback=request)

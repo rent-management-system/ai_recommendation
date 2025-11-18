@@ -10,7 +10,7 @@ class RecommendationRequest(BaseModel):
     language: str = "en"  # 'en', 'am', 'or'
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "job_school_location": "Bole",
                 "salary": 5000.0,
@@ -30,3 +30,8 @@ class RecommendationResponse(BaseModel):
     affordability_score: float
     reason: str
     map_url: str
+    # New enriched fields (optional for backward compatibility)
+    images: list[str] | None = None
+    details: dict | None = None
+    route: dict | None = None
+    reason_details: dict | None = None

@@ -409,6 +409,11 @@ async def reason_step(state: AgentState, config: Dict[str, Any]): # Added config
             # Do not include route names in prompt context
             "rent_price": float(prop.get("price", 0.0)) if isinstance(prop.get("price", 0.0), (int, float)) or str(prop.get("price", "")).replace('.', '', 1).isdigit() else float(str(prop.get("price", 0.0)).replace("Decimal(", "").replace(")", "").replace("'", "")) if str(prop.get("price", "")).startswith("Decimal") else 0.0,
             "salary": state.salary,
+            "budget_30_percent": float((state.salary or 0.0) * 0.3),
+            "remaining_after_rent_transport": float((state.salary or 0.0) - (
+                (float(prop.get("price", 0.0)) if isinstance(prop.get("price", 0.0), (int, float)) or str(prop.get("price", "")).replace('.', '', 1).isdigit() else float(str(prop.get("price", 0.0)).replace("Decimal(", "").replace(")", "").replace("'", "")) if str(prop.get("price", "")).startswith("Decimal") else 0.0)
+                + (transport_cost or 0.0)
+            )),
             "family_size": state.family_size,
             "bedrooms": prop.get("bedrooms"),
             "amenities": prop.get("amenities", []),
